@@ -1,8 +1,4 @@
 #!/usr/bin/python2.6
-# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/generic_cf-agent_policies/config-general/manage_usr_local_admin/CacheExtractor.py $
-# version       \$Revision: 66239 $
-# modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2013-10-14 18:11:59 +0000 (Mon, 14 Oct 2013) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -178,6 +174,22 @@ class CacheExtractor(RedisFinder.RedisFinder):
     if self._number_of_results == 0:
       raise Exception('No results were found from the search.  Please try your search again.  use --list-files to get an idea of what objects exist in the cache.')
 
+    # When we insert keys into the cache, we insert with <hostname>$<uuid>.  At the end of insertion, we rename the key from this uuid to the actual key name.
+    # The actual key name will be in the form <hostname>#<filename>
+    # This allows the operation to be atomic.  We can either search and find the object, or we can't.  Before, there was a race condition where we could be extracting
+    # the key at the exact moment of insertion.  If we dont find a key with "#" in the name of the key, remove it from results.  We shouldn't be searching against
+    # objects that dont contain # in the keyname.  
+    temp_results = {}
+    for redis_server in self._redis_servers:
+      temp_results[redis_server] = []
+      for named_object in self._named_object_results[redis_server]:
+        if "#" in named_object:
+          temp_results[redis_server].append(named_object)
+        else:
+          if self._verbose: 
+            print "(+) CacheExtractor.list_of_matching_named_objects() named_object " + named_object + " removed from redis server " + redis_server
+      self._named_object_results[redis_server] = temp_results[redis_server]
+      
     if self._range_query:
       for range_server in self._range_servers:
         if self._verbose:
@@ -244,35 +256,11 @@ class CacheExtractor(RedisFinder.RedisFinder):
       uniques = {}
       while self._named_object_results[redis_server]:
         named_object = self._named_object_results[redis_server].pop()
-        if self._verbose:
-          host, file = named_object.split('#')
+        host, file = named_object.split('#')
         if self._object_store[redis_server]:
           # We are in data extraction mode with contents, md5sum, stat, or wordcount.
           contents_of_named_object = self._object_store[redis_server].pop()
-
-          # A race condition exists in that if we are attempting to extract and object at the exact moment a client is inserting data, then on 
-          # extraction, we get NoneType.  This causes bz2.decompress to blow up as it cant deal with a NoneType object.  Instead, allow upwards 
-          # of 30 seconds for this client to complete pushing data into the cache.  If we get an object, or we hit 30, eithe way bail.  
-          counter = 0
-          while not contents_of_named_object:
-            time.sleep(1)
-            counter += 1
-            if self._contents:
-              contents_of_named_object = redis_connection.lindex(named_object, self._index_contents)
-            elif self._md5sum:
-              contents_of_named_object = redis_connection.lindex(named_object, self._index_md5sum)
-            elif self._stat:
-              contents_of_named_object = redis_connection.lindex(named_object, self._index_stat)
-            elif self._wordcount:
-              contents_of_named_object = redis_connection.lindex(named_object, self._index_wordcount)
-            if self._verbose:
-              print "(*) Waiting for " + named_object + " for " + str(counter) + " seconds"
-            if counter >= 30:
-              break
-          if not contents_of_named_object:
-            if self._verbose:
-              print "could not fetch " + named_object
-          else:
+          if contents_of_named_object:
             self._gold[named_object] = bz2.decompress(contents_of_named_object)
         else:
           # We are either in --search or --list-files operations.  We didn't actually extract data.  if we are in --list-files, we want a list of unique

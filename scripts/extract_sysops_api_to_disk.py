@@ -1,8 +1,4 @@
 #!/usr/bin/python2.6
-# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/generic_cf-agent_policies/config-general/manage_usr_local_utilities/extract_sysops_api_to_disk.py $
-# version       \$Revision: 66239 $
-# modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2013-10-14 18:11:59 +0000 (Mon, 14 Oct 2013) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -20,6 +16,8 @@ import CacheExtractor
 import time
 import shutil
 import signal
+import gc
+import datetime
 
 class timeout_exception(Exception):
   pass
@@ -65,21 +63,43 @@ def main():
       start_dc_time = time.time()
       if not os.path.exists(base_directory + datacenter):
         os.makedirs(base_directory + datacenter)
-      dataDump = CacheExtractor.CacheExtractor(scope = 'site', site = datacenter.lower(), search_string = 'linkedin.com', contents = True)
 
-      for key in sorted(dataDump._gold.iterkeys()):
-        host, file = key.split('#')
-        hostdir = base_directory + datacenter + "/" + host
-        if not os.path.exists(hostdir + os.path.dirname(file)):
-          os.makedirs(hostdir + os.path.dirname(file))
-        if dataDump._gold[key]:
-          tmp_target_file_name = hostdir + os.path.dirname(file) + "/." + os.path.basename(file)
-          target_file_name = hostdir + file
-          tmp_target_file = open(tmp_target_file_name, 'w')
-          tmp_target_file.write(dataDump._gold[key])
-	  tmp_target_file.close()
-	  shutil.move(tmp_target_file_name, target_file_name)
-          files_written[target_file_name] = 1
+      # Find the unique files for the datacenter.  Spawn a CacheExtractor object for every key.  Dumping the entire datacenter in a single object requires too much RAM.
+      uniqueFiles = CacheExtractor.CacheExtractor(scope = 'site', site = datacenter.lower(), list_files = True)
+
+      number_of_keys = len(uniqueFiles._gold.keys())
+      keys_processed = 0
+      for key in sorted(uniqueFiles._gold.iterkeys()):
+        keys_processed += 1
+        start_file_time = time.time()
+        filename = key.split("#")[1]
+        # Spawn a CacheExtractor object for every unique key, in every datacenter.
+        try:
+          dataDump =  CacheExtractor.CacheExtractor(scope = 'site', site = datacenter.lower(), search_string = filename, contents = True)
+        except Exception, e:
+          print "Lost filename " + filename + " The object has dropped out of the cache"
+          continue
+
+        for key in sorted(dataDump._gold.iterkeys()):
+          host, file = key.split('#')
+          hostdir = base_directory + datacenter + "/" + host
+          if not os.path.exists(hostdir + os.path.dirname(file)):
+            os.makedirs(hostdir + os.path.dirname(file))
+          if dataDump._gold[key]:
+            tmp_target_file_name = hostdir + os.path.dirname(file) + "/." + os.path.basename(file)
+            target_file_name = hostdir + file
+            tmp_target_file = open(tmp_target_file_name, 'w')
+            tmp_target_file.write(dataDump._gold[key])
+	    tmp_target_file.close()
+	    shutil.move(tmp_target_file_name, target_file_name)
+            files_written[target_file_name] = 1
+        del dataDump
+        gc.collect()
+        print "Completed filename " + filename + " in datacenter " + datacenter + " in " + str(int(time.time() - start_file_time)) + " seconds. " + str(number_of_keys - keys_processed) + " keys remain for the datacenter."
+        print "Total time elapsed is " + str(datetime.timedelta(seconds=int(time.time() - start_time)))
+
+      del uniqueFiles  
+      gc.collect()
       print "Completed datacenter " + datacenter + " in " + str(int(time.time() - start_dc_time)) + " seconds"
 
     purge_start = time.time()

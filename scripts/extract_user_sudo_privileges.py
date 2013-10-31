@@ -1,8 +1,4 @@
 #!/usr/bin/python2.6
-# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/generic_cf-agent_policies/config-general/manage_usr_local_utilities/extract_user_sudo_privileges.py $
-# version       \$Revision: 66239 $
-# modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2013-10-14 18:11:59 +0000 (Mon, 14 Oct 2013) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.

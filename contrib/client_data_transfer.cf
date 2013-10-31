@@ -1,7 +1,13 @@
-# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/generic_cf-agent_policies/client_data_transfer.cf $
-# version       \$Revision: 68745 $
-# modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2013-10-25 16:37:40 -0400 (Fri, 25 Oct 2013) $
+
+# (c) [2013] LinkedIn Corp. All rights reserved.
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at  http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+# A sample CFEngine policy that symlinks objects into /var/cfengine/outgoing.  The script module_populate_mps_cache simply looks for objects
+# in this directory and sends them into the Redis Cache.
+
 bundle agent client_data_transfer
 {
 vars:
