@@ -1,0 +1,378 @@
+# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/generic_cf-agent_policies/client_data_transfer.cf $
+# version       \$Revision: 68745 $
+# modifiedby    \$LastChangedBy: msvoboda $
+# lastmodified  \$Date: 2013-10-25 16:37:40 -0400 (Fri, 25 Oct 2013) $
+bundle agent client_data_transfer
+{
+vars:
+	any::
+		"outgoing"			string	=>	"/var/cfengine/outgoing";
+
+	linux|sunos_5_10::
+		"runit_startup_scripts"		slist	=>	splitstring(execresult("/bin/ls -d /etc/runit/service/* 2>/dev/null", "useshell"), "$(const.n)", "99999999999");
+
+	sunos_5_10::
+		"network_configs"		slist	=>	splitstring(execresult("/bin/ls /etc/hostname.*","useshell"), "$(const.n)", "99999999999");
+		"crontabs"			slist	=>	splitstring(execresult("/bin/ls /var/spool/cron/crontabs/*", "useshell"), "$(const.n)", "99999999999");
+
+	linux::
+		"network_configs"		slist	=>	splitstring(execresult("/bin/ls /etc/sysconfig/network-scripts/ifcfg-*","useshell"), "$(const.n)", "99999999999");
+		"crontabs"			slist	=>	splitstring(execresult("/bin/ls /var/spool/cron/*","useshell"), "$(const.n)", "99999999999");
+
+	sunos_5_10.i86pc::
+		"packages[LINKpy-redis]"	string	=>	"/var/cfengine/modules/solaris_packages/x86_64/LINKpy-redis.pkg";
+
+	sunos_5_10.sparc::
+		"packages[LINKpy-redis]"	string	=>	"/var/cfengine/modules/solaris_packages/sparc/LINKpy-redis.pkg";
+
+	sunos_5_10::
+		"admin_file"			string	=>	"/var/cfengine/modules/solaris_packages/pkg.admin";
+
+
+classes:
+################################################# Populate Redis Cache ##################################################################################
+	# This sounds stupid, but usemodule statements in any policy are executed during promises.cf.  By setting a dummy local class below, and 
+	# setting the class statement to fire module_populate_mps_cache off of it, we guarantee that this module will only fire once during
+	# local policy execution, not during promises.cf and client_data_transfer.cf execution.  Without this class, the module actually fires twice
+	# on every cf-agent execution.  Its additional network overhead that is unnecessary.  
+	any::
+	  "in_client_data_transfer_execution"	or	=>	{ "any", };
+
+	# Broken down, this class statement reads: If we haven't already executed this module in client_data_transfer execution yet (cf-agent actually
+	# fires through each policy 4-5 times on every run to converge, so this module only executes during the first past of the policy), we are in
+	# "agent" which means cf-agent execution and not cf-promises, the primary mps, and in client_data_transfer local policy execution from the
+	# described above.
+    	# In short, this should execute only once per Cfengine execution.  Not during cf-promises, not during promises.cf, and only once in this policy.
+	# Since we populate the cache on all MPS, there is no need to alternate between MPS using mps#_primary as is done in promises.cf to pull range.  
+
+	!populate_bz2_cache.agent.in_client_data_transfer_execution::
+		"populate_bz2_cache"	expression	=>	usemodule("module_populate_mps_cache", "-p $(shared_global_environment.mps1) -s $(shared_global_environment.mps2) -t $(shared_global_environment.mps3) -f $(shared_global_environment.mps4)");
+################################################# Populate Redis Cache ##################################################################################
+
+	sunos_5_10::
+                "easy_install_exists"	expression      =>      fileexists("/export/ctools/lib/python2.6/site-packages/easy-install.pth");
+
+	linux::
+		"etc_exports_exists"	expression	=>	fileexists("/etc/exports");
+	
+	linux|sunos_5_10::
+		"etc_acctprof_exists"	expression	=>	fileexists("/etc/ACCT_PROFILE");
+
+	linux|sunos_5_10::
+		"build_profile_exists"	expression	=>	fileexists("/etc/BUILD_PROFILE");
+
+	linux|sunos_5_10::
+		"sudoers_exists"	expression	=>	fileexists("/etc/sudo.d/sudoers-MACHINE_GROUP");
+
+	linux|sunos_5_10::
+		"range_classes_exists"	expression	=>	fileexists("/etc/range_classes.conf");
+
+	linux|sunos_5_10::
+		"RFA_exists"		expression	=>	fileexists("/etc/RFA");
+
+	linux|sunos_5_10::
+		"VERSION_exists"	expression	=>	fileexists("/usr/local/linkedin/VERSION");
+
+	sunos_5_10::
+		"pyredis_installed"	expression	=>	returnszero("/bin/pkginfo LINKpy-redis > /dev/null 2>&1", "useshell");
+
+	redhat_6::
+		"reboot_please"		expression	=>	fileexists("/tmp/REBOOT_ME_PLEASE_FOR_THE_LOVE_OF_ALL_THAT_IS_INTEL");
+
+	linux|sunos_5_10::
+		"etc_cisco_bios_exists"	expression	=>	fileexists("/etc/cisco_bios.json");
+
+	linux|sunos_5_10::
+		"tftp_exists"		expression	=>	fileexists("/etc/xinetd.d/tftp");
+
+	linux|solarisx86::
+		"can_we_decom"		expression	=>	fileexists("/var/tmp/can_we_decom");
+
+	any::
+		"per_file_stats"	expression	=>	fileexists("/etc/cfe.d/global_per_file_sysops_api_interaction_times.json");
+
+files:
+       any::
+                "/etc/cfe.d/."
+                        handle                          =>      "create_etc_cfe_dot_d",
+                        create                          =>      "true",
+                        perms                           =>      mog("0755","root","root");
+
+       sunos_5_10.easy_install_exists::
+                "/export/ctools/lib/python2.6/site-packages/easy-install.pth"
+                        handle				=>      "insert_redis_into_python_searchpath",
+                        edit_line			=>      append_if_no_line("./redis-2.7.2-py2.6.egg");
+
+        linux::
+                "/usr/local/bin/rsync"
+                        handle          		=>      "linux_symlink_rsync",
+                        link_from       		=>      ln_s("/usr/bin/rsync"),
+                        classes         		=>      if_repaired("rsync_symlinked");
+
+	linux|sunos_5_10::
+		"$(outgoing)/."
+			create				=>	"true",
+			perms				=>	mog("0700","root","root");
+
+	linux|sunos_5_10::
+		"/var/cfengine/$(sys.host)"
+			link_from			=>	ln_s("$(outgoing)");
+
+	VERSION_exists::
+		"$(outgoing)/VERSION"
+			link_from			=>	ln_s("/usr/local/linkedin/VERSION");
+
+	reboot_please::
+		"$(outgoing)/REBOOT_ME_PLEASE_FOR_THE_LOVE_OF_ALL_THAT_IS_INTEL"
+			link_from			=>	ln_s("/tmp/REBOOT_ME_PLEASE_FOR_THE_LOVE_OF_ALL_THAT_IS_INTEL");
+
+	etc_exports_exists.linux::
+		"$(outgoing)/exports"
+			link_from			=>	ln_s("/etc/exports");
+
+	linux::
+		"$(outgoing)/pam_env.conf"
+			link_from			=>	ln_s("/etc/security/pam_env.conf");
+		"$(outgoing)/authconfig"
+			link_from			=>	ln_s("/etc/sysconfig/authconfig");
+		"$(outgoing)/grub"
+			link_from			=>	ln_s("/etc/sysconfig/grub");
+		"$(outgoing)/ipmi"
+			link_from			=>	ln_s("/etc/sysconfig/ipmi");
+		"$(outgoing)/ipmievd"
+			link_from			=>	ln_s("/etc/sysconfig/ipmievd");
+		"$(outgoing)/iptables-config"
+			link_from			=>	ln_s("/etc/sysconfig/iptables-config");
+		"$(outgoing)/irqbalance"
+			link_from			=>	ln_s("/etc/sysconfig/irqbalance");
+		"$(outgoing)/kernel"
+			link_from			=>	ln_s("/etc/sysconfig/kernel");
+		"$(outgoing)/lldpd"
+			link_from			=>	ln_s("/etc/sysconfig/lldpd");
+		"$(outgoing)/nfs"
+			link_from			=>	ln_s("/etc/sysconfig/nfs");
+		"$(outgoing)/ntpd"
+			link_from			=>	ln_s("/etc/sysconfig/ntpd");
+		"$(outgoing)/ntpdate"
+			link_from			=>	ln_s("/etc/sysconfig/ntpdate");
+		"$(outgoing)/rsyslog"
+			link_from			=>	ln_s("/etc/sysconfig/rsyslog");
+		"$(outgoing)/smartmontools"
+			link_from			=>	ln_s("/etc/sysconfig/smartmontools");
+		"$(outgoing)/snmpd"
+			link_from			=>	ln_s("/etc/sysconfig/snmpd");
+		"$(outgoing)/sshd"
+			link_from			=>	ln_s("/etc/sysconfig/sshd");
+		"$(outgoing)/udev"
+			link_from			=>	ln_s("/etc/sysconfig/udev");
+		"$(outgoing)/xinetd"
+			link_from			=>	ln_s("/etc/sysconfig/xinetd");
+
+	build_profile_exists::
+		"$(outgoing)/BUILD_PROFILE"
+			link_from			=>	ln_s("/etc/BUILD_PROFILE");
+
+	tftp_exists::
+		"$(outgoing)/tftp"
+			link_from			=>	ln_s("/etc/xinetd.d/tftp");
+
+	RFA_exists::
+		"$(outgoing)/RFA"
+			link_from			=>	ln_s("/etc/RFA");
+
+	!RFA_exists::
+		"$(outgoing)/RFA"
+			delete				=>	tidy;
+
+	etc_acctprof_exists.(linux|sunos_5_10)::
+		"$(outgoing)/ACCT_PROFILE"
+			link_from			=>	ln_s("/etc/ACCT_PROFILE");
+
+	linux|sunos_5_10::
+		"$(outgoing)/cm.conf"
+			link_from			=>	ln_s("/etc/cm.conf");
+
+	linux|sunos_5_10::
+		"$(outgoing)/passwd"
+			link_from			=>	ln_s("/etc/passwd");
+
+	linux::
+		"$(outgoing)/sysctl.conf"
+			link_from			=>	ln_s("/etc/sysctl.conf");
+
+	linux::
+		"$(outgoing)/sysctl.testing"
+			link_from			=>	ln_s("/etc/sysctl.testing");
+
+	linux|sunos_5_10::
+		"$(outgoing)/group"
+			link_from			=>	ln_s("/etc/group");
+
+	sunos_5_10::
+		"$(outgoing)/system"
+			link_from			=>	ln_s("/etc/system");
+
+	linux|sunos_5_10::
+		"$(outgoing)/cron/$(crontabs)"
+			link_from			=>	ln_s("$(crontabs)");
+
+	sunos_5_10::
+		"$(outgoing)/vfstab"
+			link_from			=>	ln_s("/etc/vfstab");
+
+	linux::
+		"$(outgoing)/fstab"
+			link_from			=>	ln_s("/etc/fstab");
+
+	sunos_5_10::
+		"$(outgoing)/release"
+			link_from			=>	ln_s("/etc/release");
+
+	linux::
+		"$(outgoing)/redhat-release"
+			link_from			=>	ln_s("/etc/redhat-release");
+
+	sunos_5_10::
+		"$(outgoing)/init"
+			link_from			=>	ln_s("/etc/default/init");
+
+	sudoers_exists::
+		"$(outgoing)/sudoers-EXCEPTIONS"
+			link_from			=>	ln_s("/etc/sudo.d/sudoers-EXCEPTIONS");
+
+	linux|sunos_5_10::
+		"$(outgoing)/active_hardware_failures.json"
+			link_from			=>	ln_s("/etc/active_hardware_failures.json");
+
+	linux|sunos_5_10::
+		"$(outgoing)/historical_hardware_failures.json"
+			link_from			=>	ln_s("/etc/historical_hardware_failures.json");
+
+	linux|sunos_5_10::
+		"$(outgoing)/allclasses.txt"
+			link_from			=>	ln_s("/var/cfengine/state/allclasses.txt");
+
+	range_classes_exists::
+		"$(outgoing)/range_classes.conf"
+			link_from			=>	ln_s("/etc/range_classes.conf");
+
+	linux::
+		"$(outgoing)/limits.conf"
+			link_from			=>	ln_s("/etc/security/limits.conf");
+
+	sunos_5_10::
+		"$(outgoing)/sulog"
+			link_from			=>	ln_s("/var/adm/sulog");
+
+	sunos_5_10|linux::
+		"$(outgoing)/hardware_identification.json"
+			link_from			=>	ln_s("/etc/hardware_identification.json");
+
+	sudoers_exists::
+		"$(outgoing)/sudoers-MACHINE_GROUP"
+			link_from			=>	ln_s("/etc/sudo.d/sudoers-MACHINE_GROUP");
+
+	sunos_5_10|linux::
+		"$(outgoing)/runit_scripts/$(runit_startup_scripts)/run"
+			link_from			=>	ln_s("$(runit_startup_scripts)/run");
+
+	sunos_5_10|linux::
+		"$(outgoing)/runit_scripts/$(runit_startup_scripts)/log/run"
+			link_from			=>	ln_s("$(runit_startup_scripts)/log/run");
+
+	sunos_5_10|linux::
+		"$(outgoing)/network_configurations/hosts"
+			link_from			=>	ln_s("/etc/hosts");
+
+	sunos_5_10|linux::
+		"$(outgoing)/network_configurations/$(network_configs)"
+			link_from			=>	ln_s("$(network_configs)");
+
+	linux::
+		"$(outgoing)/network_configurations/network"
+			link_from			=>	ln_s("/etc/sysconfig/network");
+
+	sunos_5_10::
+		"$(outgoing)/network_configurations/defaultrouter"
+			link_from			=>	ln_s("/etc/defaultrouter");
+
+	etc_cisco_bios_exists::
+		"$(outgoing)/cisco_bios.json"
+			link_from			=>	ln_s("/etc/cisco_bios.json");
+
+	can_we_decom::
+		"$(outgoing)/can_we_decom"
+			link_from			=>	ln_s("/var/tmp/can_we_decom");
+
+	sunos_5_10::
+		"$(outgoing)/etc/security/policy.conf"
+			link_from			=>	ln_s("/etc/security/policy.conf");
+
+	per_file_stats::
+		"$(outgoing)/global_per_file_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/global_per_file_sysops_api_interaction_times.json");
+
+	any::
+		"$(outgoing)/global_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/global_sysops_api_interaction_times.json");
+
+		"$(outgoing)/$(shared_global_environment.mps1)_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/$(shared_global_environment.mps1)_sysops_api_interaction_times.json");
+
+		"$(outgoing)/$(shared_global_environment.mps2)_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/$(shared_global_environment.mps2)_sysops_api_interaction_times.json");
+
+		"$(outgoing)/$(shared_global_environment.mps3)_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/$(shared_global_environment.mps3)_sysops_api_interaction_times.json");
+
+		"$(outgoing)/$(shared_global_environment.mps4)_sysops_api_interaction_times.json"
+			link_from			=>	ln_s("/etc/cfe.d/$(shared_global_environment.mps4)_sysops_api_interaction_times.json");
+
+commands:
+	linux.packages_installed::
+		"/sbin/ldconfig"
+			comment				=>	"client_data_transfer execute ldconfig";
+
+	linux.packages_failed::
+		"/usr/bin/yum clean all"
+			comment				=>	"yum_install_linux_packages execute yum clean all";
+
+packages:
+ 	redhat_6::
+		"hiredis"
+			package_policy			=>	"add",
+			package_method			=>	yum_noversion,
+			package_select			=>	"==",
+			package_architectures		=>	{ "x86_64", },
+			classes				=>	cf2_if_else("packages_installed", "packages_failed");
+
+	linux::
+		"LINK-python-redis"
+			package_policy			=>	"addupdate",
+			package_method			=>	yum_noversion,
+			package_select			=>	"==",
+			package_architectures		=>	{ "noarch", },
+			classes				=>	cf2_if_else("packages_installed", "packages_failed");
+
+	sunos_5_10.!pyredis_installed::
+		"LINKpy-redis"
+			package_policy			=>	"add",
+			package_method			=>	solaris_no_file_repo("LINKpy-redis","$(packages[LINKpy-redis])", "$(admin_file)"),
+			classes				=>	if_repaired("packages_installed");
+
+reports:
+	rsync_symlinked::
+		"cf3: rsync was symlinked from /usr/bin/rsync on $(sys.host)";
+	
+	packages_installed::
+		"cf3: Packages were installed to support python-redis to perform client data transfers.";
+
+	redis_server_timeout_exception::
+		"cf3: Redis timeout connecting to $(module_populate_mps_cache.timeout_exception_redis_server)";
+
+	redis_server_connection_failure::
+		"cf3: Redis connection failure to $(module_populate_mps_cache.connection_error_redis_server)";
+
+	packages_failed::
+		"cf3: Could not install packages via yum.";
+}
