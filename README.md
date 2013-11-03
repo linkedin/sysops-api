@@ -6,10 +6,9 @@ Licensed under the Apache License, Version 2.0 (the "License"); you may not us
  
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-Operational Visability
+Operational Visibility
 ===============================
-sysops-api is a framework designed to provide visability from tens of thousands of machines in seconds.  Instead of trying to SSH to remote machines
-to collect data (execute commands, grep through files), LinkedIn uses this framework to answer any arbitrary question about any infrastructure.
+sysops-api is a framework that leverages Redis to provide visibility from tens of thousands of machines in seconds.  Instead of trying to SSH to remote machines to collect data (execute commands, grep through files), LinkedIn uses this framework to answer any arbitrary question about all of our infrastructure.
 
 The LISA 2013 presentation which describes the architecture can be found at this URL: xxxxxxxxx
 
