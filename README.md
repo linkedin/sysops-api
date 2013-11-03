@@ -21,7 +21,7 @@ This project is basically a means for us to answer any arbitrary question about 
     user	0m45.244s
     sys  	0m2.837s
 
-The above command searched the output of "sysctl –a" across 24 thousand machines in about 30 seconds and reported that all machines had the same value for net.core.netdev_budget = 300.   This means if we wanted to use automation to control this kernel tunable, we would not impact any systems that had this tunable at a different value.   
+The above command searched the output of "sysctl –a" across 24 thousand machines in 28 seconds and reported that all machines had the same value for net.core.netdev_budget = 300.   This means if we wanted to use automation to control this kernel tunable, we would not impact any systems that had this tunable at a different value.   
 
 What kind of data is this fetching?
 ===============================
@@ -87,5 +87,5 @@ JSON objects, (lshw --output json) and access the hardware characteristics of an
 
 More Documentation
 ===============================
-Usage of extract_sysops_cache.py URL xxxxxxxxxxxxxxxxxxxxxxxxx
+*[Usage of extract_sysops_cache.py](https://github.com/linkedin/sysops-api/wiki/Extracting-the-Sysops-cache-for-fun-and-profit)*
 
