@@ -1,7 +1,7 @@
 sysops-api
 ===============================
 
-© [201X] LinkedIn Corp. All rights reserved.
+© [2013] LinkedIn Corp. All rights reserved.
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at  http://www.apache.org/licenses/LICENSE-2.0
  
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,8 +15,12 @@ The LISA 2013 presentation which describes the architecture can be found at this
 
 This project is basically a means for us to answer any arbitrary question about any production machine and get results returned to us in seconds.   We primarily use this for crawling tens of thousands of machines for information very quickly.   Its how we can confidently make automation changes.  We use this to audit production before a change is pushed, so we know the state of machines and what our change will impact.  
 
-    [msvoboda@esv4-infra01 ~]$ extract_sysops_cache.py --search sysctl-a --contents --scope global | grep net.core.netdev_budget  | sort | uniq -c | sort -n
-  24799 net.core.netdev_budget = 300
+    [msvoboda@esv4-infra01 ~]$ time extract_sysops_cache.py --search sysctl-a --contents --scope global | grep net.core.netdev_budget  | uniq -c | sort -n
+    24247 net.core.netdev_budget = 300
+
+    real	0m28.337s
+	user	0m45.244s
+	sys	0m2.837s
 
 The above command searched the output of "sysctl –a" across 24 thousand machines in about 30 seconds and reported that all machines had the same value for net.core.netdev_budget = 300.   This means if we wanted to use automation to control this kernel tunable, we would not impact any systems that had this tunable at a different value.   
 
