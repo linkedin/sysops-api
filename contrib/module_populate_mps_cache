@@ -154,10 +154,11 @@ def interact_with_redis_server(key, file_data):
 def push_redis_key_into_cache(key, file_data):
   tempkey = hostname + "$" + str(uuid.uuid4())
   try:
-    redis_connection.expire(tempkey,ttl)
+    redis_pipeline.expire(tempkey,ttl)
     for object in file_data:
-      redis_connection.rpush(tempkey,bz2.compress(object))
-    redis_connection.rename(tempkey, key)
+      redis_pipeline.rpush(tempkey,bz2.compress(object))
+    redis_pipeline.rename(tempkey, key)
+    redis_pipeline.execute()
   except redis.exceptions.ConnectionError, e:
     print "=connection_error_redis_server=" + redis_server
     print "+redis_server_connection_failure"
@@ -293,6 +294,8 @@ if __name__ == '__main__':
     redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = {}
 
     redis_connection = redis.Redis(host=redis_server,port=6379,db=1,socket_timeout=5,charset='utf-8', errors='strict')
+    redis_pipeline = redis_connection.pipeline()
+
     if options.verbose:
       print "(+) redis_server is " + redis_server
       print "(+) cache TTL is " + str(ttl)
