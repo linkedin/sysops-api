@@ -1,4 +1,8 @@
 #!/usr/bin/python2.6
+# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_utilities/extract_sysops_cache.py $
+# version       \$Revision: 73253 $
+# modifiedby    \$LastChangedBy: msvoboda $
+# lastmodified  \$Date: 2013-11-13 14:10:45 -0500 (Wed, 13 Nov 2013) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -189,7 +193,11 @@ if __name__ == '__main__':
   parser.add_option("--range-query",
     action = "store",
     dest = "range_query",
-    help = "Specify a range cluster of hosts you which to use to use to make queries against.")
+    help = "Specify a range cluster of hosts you which to use to use to make queries against. THIS IS A RESTRICTIVE OPERATION, NOT INCLUSIVE.")
+  parser.add_option("--file",
+    action = "store",
+    dest = "file",
+    help = "Specify a file containing a list of hosts that you would want to see results from.  THIS IS A RESTRICTIVE OPERATION, NOT INCLUSIVE.")
   parser.add_option("--scope",
     action = "store",
     dest = "scope",
@@ -245,6 +253,7 @@ if __name__ == '__main__':
 						wordcount = options.wordcount,
 						contents = options.contents,
 						range_query = options.range_query,
+						file = options.file,
 						search_string = options.search)
     except Exception, e:
       print e
@@ -308,6 +317,7 @@ if __name__ == '__main__':
 						wordcount = options.wordcount,
 						contents = options.contents,
 						range_query = False,  # this is modified.  The range_query applies to the compareResults object.
+                				file = options.file,
 						search_string = options.search)
     except Exception, e:
       print e
@@ -330,6 +340,7 @@ if __name__ == '__main__':
                                  		wordcount = options.wordcount,
 						contents = options.contents,
 						range_query = options.range_query,
+                				file = options.file,
 						search_string = options.compare)
     except Exception, e:
       print "We found results with the --search string but did not find results with the --compare string. You should use --search to find a string that can be used with --compare to find valid results so we can actually compare data.  The --search option must return exactly one result.  The --compare option can return one or more results."
@@ -356,6 +367,7 @@ if __name__ == '__main__':
 						prefix_hostnames = options.prefix_hostnames,
 						md5sum = True,
 						range_query = options.range_query,
+                				file = options.file,
 						search_string = options.search)
     except Exception, e:
       print e
@@ -444,6 +456,7 @@ if __name__ == '__main__':
 						wordcount = options.wordcount,
 						contents = options.contents,
 						range_query = options.range_query,
+                				file = options.file,
 						search_string = first_key)  # This option modified to search for first_key
       except Exception, e:
         print e
@@ -467,6 +480,7 @@ if __name__ == '__main__':
 						wordcount = options.wordcount,
 						contents = options.contents,
 						range_query = options.range_query,
+                				file = options.file,
 						search_string = compare_key)  # This option modified to search for first_key
         except Exception, e:
           print e

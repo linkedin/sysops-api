@@ -27,6 +27,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
 		site = None,
 		range_servers = None,
 		range_query = None,
+		file = None,
                 search_string = None,
 		return_randomized_servers = True,
 		list_files = False,
@@ -52,6 +53,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
     self._search_string = search_string
     self._prefix_hostnames = prefix_hostnames
     self._return_randomized_servers = return_randomized_servers
+    self._file = file
 
     # We used to use redis database 0, which was plain text.  Now, bz2 compression populates database 1.
     self._database = 1
@@ -112,6 +114,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
       print "(+) CacheExtractor __init__  named_object_results", self._named_object_results
       print "(+) CacheExtractor __init__  site", self._site
       print "(+) CacheExtractor __init__  list_files", self._list_files
+      print "(+) CacheExtractor __init__  file", self._file
       print "(+) CacheExtractor __init__  prefix_hostnames", self._prefix_hostnames
       print "(+) CacheExtractor __init__  md5sum", self._md5sum
       print "(+) CacheExtractor __init__  contents", self._contents
@@ -190,6 +193,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
             print "(+) CacheExtractor.list_of_matching_named_objects() named_object " + named_object + " removed from redis server " + redis_server
       self._named_object_results[redis_server] = temp_results[redis_server]
       
+    machines = []
     if self._range_query:
       for range_server in self._range_servers:
         if self._verbose:
@@ -197,21 +201,37 @@ class CacheExtractor(RedisFinder.RedisFinder):
           print "(+) CacheExtractor.list_of_matching_named_objects() self.range_query is ", self._range_query
         try:
           range_connection = seco.range.Range(range_server)
-          range_results = range_connection.expand(self._range_query)
-          if range_results:
+          machines = range_connection.expand(self._range_query)
+          if machines:
             break
         except seco.range.RangeException:
           print "(+) CacheExtractor.list_of_matching_named_objects() range query invalid"
           sys.exit(1)
+    
+    if self._file:
+      try:
+        if machines:
+          boxes = open(self._file,'r').readlines()
+          for box in boxes:
+            machines.append(box)
+        else:
+          machines = open(self._file,'r').readlines()
+      except Exception, e:
+        print "The file " + self._file + " can not be opened.  Does it exist?  Exiting."
+        sys.exit(1)
+        
 
+    # Both range queries and reading from a file are both restrictive actions.  We only return objects if we match from either source.
+    if self._range_query or self._file:
       temp_results = {}
       for redis_server in self._redis_servers:
         temp_results[redis_server] = []
         for named_object in self._named_object_results[redis_server]:
-          for range_result in range_results:
-            if range_result in named_object:
+          for machine in machines:
+            if machine.strip() in named_object:
               temp_results[redis_server].append(named_object) 
         self._named_object_results[redis_server] = temp_results[redis_server]
+    
 ###############################################################################################
   def extract_named_objects(self):
 
