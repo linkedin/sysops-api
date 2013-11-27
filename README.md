@@ -12,7 +12,7 @@ sysops-api is a framework that leverages Redis to provide visibility from tens o
 
 *[The slides from the  LISA 2013 presentation which describes the architecture can be found here](http://www.slideshare.net/MikeSvoboda/lisa-2013-sysopsapi-leveraging-inmemory-key-value-stores-for-large-scale-operations-with-redis-and-cfengine)*
 
-*[Video from LISA 2013 of this presentation can be watched here](http://youtu.be/RIaCtdyDoOc)*
+*[Video from LISA 2013 of this presentation can be watched here](http://youtu.be/H1dVsSvKBlM)*
 
 
 This project is basically a means for us to answer any arbitrary question about any production machine and get results returned to us in seconds.   We primarily use this for crawling tens of thousands of machines for information very quickly.   Its how we can confidently make automation changes.  We use this to audit production before a change is pushed, so we know the state of machines and what our change will impact.  
