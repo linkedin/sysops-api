@@ -1,4 +1,8 @@
 #!/usr/bin/python2.6
+# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/branches/esv4-cfe-test.corp/cf-agent_modules/module_populate_mps_cache $
+# version       \$Revision: 77954 $
+# modifiedby    \$LastChangedBy: msvoboda $
+# lastmodified  \$Date: 2013-12-02 17:13:13 -0500 (Mon, 02 Dec 2013) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -33,115 +37,84 @@ def prune_array_data(prune):
     all_collections = sorted(prune["measured"].keys())  
     del prune["measured"][all_collections[0]]
 #################################################################################################################
-def generate_per_redis_server_execution_cost(redis_server):
-  unique_files[redis_server] = {}
-  for catagory in ["mean", "median", "std", "var", "min", "max" ]:
-    redis_time_data[redis_server]["individual_redis_server_totals"][catagory] = {}
-
-  for execution in redis_time_data[redis_server]["measured"].iterkeys():
-    for store_key in redis_time_data[redis_server]["measured"][execution].iterkeys():
-      if not unique_files[redis_server].get(store_key):
-        unique_files[redis_server][store_key] = []
-      unique_files[redis_server][store_key].append(float(redis_time_data[redis_server]["measured"][execution][store_key]))
-      if not unique_files['total'].get(store_key):
-        unique_files['total'][store_key] = []
-      unique_files['total'][store_key].append(float(redis_time_data[redis_server]["measured"][execution][store_key]))
-
-  if platform.system() == "Linux":
-    import numpy as np
-    for store_key in unique_files[redis_server].iterkeys():
-      redis_time_data[redis_server]['individual_redis_server_totals']['mean'][store_key] = '%.3f' % np.mean(unique_files[redis_server][store_key])
-      redis_time_data[redis_server]['individual_redis_server_totals']['median'][store_key] = '%.3f' % np.median(unique_files[redis_server][store_key])
-      redis_time_data[redis_server]['individual_redis_server_totals']['std'][store_key] = '%.3f' % np.std(unique_files[redis_server][store_key])
-      redis_time_data[redis_server]['individual_redis_server_totals']['var'][store_key] = '%.3f' % np.var(unique_files[redis_server][store_key])
-      redis_time_data[redis_server]['individual_redis_server_totals']['min'][store_key] = '%.3f' % np.min(unique_files[redis_server][store_key])
-      redis_time_data[redis_server]['individual_redis_server_totals']['max'][store_key] = '%.3f' % np.max(unique_files[redis_server][store_key])
-#################################################################################################################
 def generate_global_redis_server_execution_cost():
 
-  ############################ Calculate per-file global statistics ############################
-  if platform.system() == "Linux":
+  import time
+
+  # the size of the total contents of the cache.
+  redis_time_data["global_total"]["total_cache_size"] = 0
+  for redis_server in redis_time_data['per_mps']['mps_cache_bytes'].iterkeys():
+    redis_time_data["global_total"]["total_cache_size"] += redis_time_data['per_mps']['mps_cache_bytes'][redis_server]
+
+  # Calculate how much time it took to interact with all MPS.
+  redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = float(time.time() - global_start_time)
+
+  # Calculate how many bytes per second were sent over the wire from all of the MPS tranfers
+  redis_time_data["global_total"]["total_redis_transfer_speed"]["measured"][global_start_time] = 0
+  redis_time_data["global_total"]["total_redis_transfer_speed"]["measured"][global_start_time] = float(redis_time_data["global_total"]["total_cache_size"] / redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time])
+
+  # Start ImportError.  If we can't import numpy (Solaris), then we can generate useful statistics
+  try:
     import numpy as np
-    global_per_file_sysops_api_interaction_times = json_data_directory + "global_per_file_sysops_api_interaction_times.json"
-    try:
-      input_text = open(global_per_file_sysops_api_interaction_times).read()
-      redis_time_data['per_file'] = json.loads(input_text.decode('utf-8', 'ignore'))
-    except Exception, e:
-      print "Sorry, couldnt read from the filesystem.  Creating a new object." + str(e)
-      redis_time_data['per_file'] = {}
-      redis_time_data['per_file']['measured'] = {}
-
-    prune_array_data(redis_time_data['per_file'])
-    redis_time_data['per_file']['measured'][global_start_time] = {}
-
-    for catagory in ["mean", "median", "std", "var", "min", "max", ]:
-      redis_time_data['per_file']['measured'][global_start_time][catagory] = {}
-  
-    for store_key in unique_files['total'].iterkeys():
-      redis_time_data['per_file']['measured'][global_start_time]['mean'][store_key] = '%.3f' % np.mean(unique_files['total'][store_key])
-      redis_time_data['per_file']['measured'][global_start_time]['median'][store_key] = '%.3f' % np.median(unique_files['total'][store_key])
-      redis_time_data['per_file']['measured'][global_start_time]['std'][store_key] = '%.3f' % np.std(unique_files['total'][store_key])
-      redis_time_data['per_file']['measured'][global_start_time]['var'][store_key] = '%.3f' % np.var(unique_files['total'][store_key])
-      redis_time_data['per_file']['measured'][global_start_time]['min'][store_key] = '%.3f' % np.min(unique_files['total'][store_key])
-      redis_time_data['per_file']['measured'][global_start_time]['max'][store_key] = '%.3f' % np.max(unique_files['total'][store_key])
-    ############################ Calculate per-file global statistics ############################
-    global_per_file_sysops_api_interaction_times = json_data_directory + "global_per_file_sysops_api_interaction_times.json"
-    try:
-      with open(global_per_file_sysops_api_interaction_times, mode = "w") as fh:
-        json.dump(redis_time_data['per_file'], fh, sort_keys=True, indent=3)
-    except Exception, e:
-      print "We tried to dump to JSON, but couldnt. Sorry." + str(e)
-
-
-
-  ############################ Calculate global statistics ############################
-  if platform.system() == "Linux":
-    import numpy as np
-    for catagory in ["mean", "median", "std", "var", "min", "max" ]:
-      redis_time_data['global_total']['total_redis_interaction_time'][catagory] = {}
-
-    # Calculate how much time it took to interact with all MPS.
-    import time
-    redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = ('%.3f' % (time.time() - float(global_start_time)))
-
-    interactions = []
-    for interaction,time in redis_time_data["global_total"]["total_redis_interaction_time"]["measured"].iteritems():
-      interactions.append(float(time))
-
-    redis_time_data['global_total']['total_redis_interaction_time']['mean'] = '%.3f' % np.mean(interactions)
-    redis_time_data['global_total']['total_redis_interaction_time']['median'] = '%.3f' % np.median(interactions)
-    redis_time_data['global_total']['total_redis_interaction_time']['std'] = '%.3f' % np.std(interactions)
-    redis_time_data['global_total']['total_redis_interaction_time']['var'] = '%.3f' % np.var(interactions)
-    redis_time_data['global_total']['total_redis_interaction_time']['min'] = '%.3f' % np.min(interactions)
-    redis_time_data['global_total']['total_redis_interaction_time']['max'] = '%.3f' % np.max(interactions)
-        
-    for redis_server in redis_time_data['global_total']['per_redis_server_interaction_time'].iterkeys():
+    for calculation in ['total_redis_interaction_time', 'total_redis_transfer_speed']:
       interactions = []
-      for interaction,time in redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]["measured"].iteritems():
+      for interaction,time in redis_time_data["global_total"][calculation]["measured"].iteritems():
         interactions.append(float(time))
+      redis_time_data['global_total'][calculation]['mean'] = np.mean(interactions)
+      redis_time_data['global_total'][calculation]['median'] =  np.median(interactions)
+      redis_time_data['global_total'][calculation]['std'] =  np.std(interactions)
+      redis_time_data['global_total'][calculation]['var'] =  np.var(interactions)
+      redis_time_data['global_total'][calculation]['min'] =  np.min(interactions)
+      redis_time_data['global_total'][calculation]['max'] =  np.max(interactions)
 
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['mean'] = '%.3f' % np.mean(interactions)
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['median'] = '%.3f' % np.median(interactions)
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['std'] = '%.3f' % np.std(interactions)
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['var'] = '%.3f' % np.var(interactions)
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['min'] = '%.3f' % np.min(interactions)
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]['max'] = '%.3f' % np.max(interactions)
-    ############################ Calculate global statistics ############################
+    
+    for calculation in ['per_redis_server_interaction_time', 'per_redis_server_transfer_speed']:
+      for redis_server in redis_time_data['per_mps'][calculation].iterkeys():
+        interactions = []
+        for interaction,time in redis_time_data['per_mps'][calculation][redis_server]["measured"].iteritems():
+          interactions.append(float(time))
+        redis_time_data['per_mps'][calculation][redis_server]['mean'] = np.mean(interactions)
+        redis_time_data['per_mps'][calculation][redis_server]['median'] = np.median(interactions)
+        redis_time_data['per_mps'][calculation][redis_server]['std'] = np.std(interactions)
+        redis_time_data['per_mps'][calculation][redis_server]['var'] = np.var(interactions)
+        redis_time_data['per_mps'][calculation][redis_server]['min'] = np.min(interactions)
+        redis_time_data['per_mps'][calculation][redis_server]['max'] = np.max(interactions)
+
+  except ImportError:
+    pass
+
+  # Dump data to disk.
   try:
     with open(global_sysops_api_interaction_times, mode = "w") as fh:
-      json.dump(redis_time_data['global_total'], fh, sort_keys=True, indent=3)
+      json.dump(redis_time_data, fh, sort_keys=True, indent=5)
   except Exception, e:
     print "We tried to dump to JSON, but couldnt.  Sorry." + str(e)
 
+
 #################################################################################################################
-def interact_with_redis_server(key, file_data):
+def interact_with_redis_server(key, file_data, timeout_alarm):
+  key_cache_bytes = 0
   old_handler = signal.signal(signal.SIGALRM, timeout_handler) 
-  # set a 5 second alarm
-  signal.alarm(5) 
+  signal.alarm(timeout_alarm) 
   return_code = 0
+
   # Begin timeout exception
   try:
-    return_code = push_redis_key_into_cache(key, file_data)
+    # Begin Redis exception
+    try:
+      tempkey = hostname + "$" + str(uuid.uuid4())
+      redis_pipeline.expire(tempkey,ttl)
+      for object in file_data:
+        compressed_object = bz2.compress(object)
+        redis_pipeline.rpush(tempkey,compressed_object)
+        key_cache_bytes += sys.getsizeof(compressed_object)
+      redis_pipeline.rename(tempkey, key)
+      redis_pipeline.execute()
+    except redis.exceptions.ConnectionError, e:
+      print "=connection_error_redis_server=" + redis_server
+      print "+redis_server_connection_failure"
+      return_code = 1
+      return (1, key_cache_bytes)
   except timeout_exception:
     print "=timeout_exception_redis_server=" + redis_server
     print "+redis_server_timeout_exception"
@@ -149,21 +122,8 @@ def interact_with_redis_server(key, file_data):
   finally:
     signal.signal(signal.SIGALRM, old_handler)
     signal.alarm(0)
-  return return_code
-#################################################################################################################
-def push_redis_key_into_cache(key, file_data):
-  tempkey = hostname + "$" + str(uuid.uuid4())
-  try:
-    redis_pipeline.expire(tempkey,ttl)
-    for object in file_data:
-      redis_pipeline.rpush(tempkey,bz2.compress(object))
-    redis_pipeline.rename(tempkey, key)
-    redis_pipeline.execute()
-  except redis.exceptions.ConnectionError, e:
-    print "=connection_error_redis_server=" + redis_server
-    print "+redis_server_connection_failure"
-    return 1
-  return 0
+
+  return (return_code, key_cache_bytes)
 #################################################################################################################
 def produce_file_md5sum(data):
   d = hashlib.md5()
@@ -180,7 +140,6 @@ def produce_wc(data):
 #################################################################################################################
 if __name__ == '__main__':
   """
-  Populate the in-memory cache of all master policy servers that the client can communicate with.  This cache will be used by various tools from
   centralized servers to query the contents of the various configurations that are listed in /var/cfengine/outgoing.
   This cache replaces the rsync processes which doesnt scale.
   """
@@ -245,53 +204,59 @@ if __name__ == '__main__':
   # Even though we can provide up to 4x redis servers on the CLI, in most cases, they will be duplicated.  Our Cfengine architecture allows for up
   # to 4x MPS per core, but we could be in a small site with a single MPS.  In any case, build a dictionary object which does the "uniques" for us.
   # We use the key to find uniques.  We use the value to determine if that unique redis server is responsive or not.  If its unresponsive, we dont query it.
-
   redis_servers_response_codes[options.primary_mps] = 0
   redis_servers_response_codes[options.secondary_mps] = 0
   redis_servers_response_codes[options.third_mps] = 0
   redis_servers_response_codes[options.forth_mps] = 0
   
   redis_time_data = {}
-  unique_files = {}
-  unique_files['total' ] = {}
-  global_start_time = '%.0f' % time.time()
+  global_start_time = time.time()
+  total_cache_bytes = 0
 
   global_sysops_api_interaction_times = json_data_directory + "global_sysops_api_interaction_times.json"
   try:
     input_text = open(global_sysops_api_interaction_times).read()
-    redis_time_data['global_total'] = json.loads(input_text.decode('utf-8', 'ignore'))
+    redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
+    redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
   except Exception, e:
     print "Sorry, couldnt read from the filesystem.  Creating a new object." + str(e)
     redis_time_data['global_total'] = {}
+    redis_time_data['per_mps'] = {}
+
+  if not redis_time_data['global_total'].get('total_redis_interaction_time'):
     redis_time_data['global_total']['total_redis_interaction_time'] = {}
     redis_time_data['global_total']['total_redis_interaction_time']['measured'] = {}
-    redis_time_data['global_total']['per_redis_server_interaction_time'] = {}
+  if not redis_time_data['global_total'].get('total_redis_transfer_speed'):
+    redis_time_data['global_total']['total_redis_transfer_speed'] = {}
+    redis_time_data['global_total']['total_redis_transfer_speed']['measured'] = {}
+
+  if not redis_time_data['per_mps'].get('per_redis_server_interaction_time'):
+    redis_time_data['per_mps']['per_redis_server_interaction_time'] = {}
+  if not redis_time_data['per_mps'].get('per_redis_server_transfer_speed'):
+    redis_time_data['per_mps']['per_redis_server_transfer_speed'] = {}
+  if not redis_time_data['per_mps'].get('mps_cache_bytes'):
+    redis_time_data['per_mps']['mps_cache_bytes'] = {}
   
+  # Only prune the total dicts at this level.  they have measured.  the per dicts are pruned below once we iterate through redis_server
   prune_array_data(redis_time_data['global_total']['total_redis_interaction_time'])
+  prune_array_data(redis_time_data['global_total']['total_redis_transfer_speed'])
 
   for redis_server in redis_servers_response_codes.iterkeys():
+    redis_time_data['per_mps']['mps_cache_bytes'][redis_server] = 0
+    redis_server_cache_bytes = 0
     redis_server_start_time = time.time()
 
-    # Load previous execution data from JSON.  If it doesn't exist, create new objects.
-    individual_redis_server_interaction_times = json_data_directory + redis_server + "_sysops_api_interaction_times.json"
-    try:
-      input_text = open(individual_redis_server_interaction_times).read()
-      redis_time_data[redis_server] = json.loads(input_text.decode('utf-8', 'ignore'))
-    except Exception, e:
-      print "Sorry, couldnt read from the filesystem.  Creating a new object." + str(e)
-      redis_time_data[redis_server] = {}
-      redis_time_data[redis_server]['measured'] = {}
-      redis_time_data[redis_server]["individual_redis_server_totals"] = {}
+    if not redis_time_data['per_mps']['per_redis_server_interaction_time'].get(redis_server):
+      redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server] = {}
+      redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]['measured'] = {}
+    if not redis_time_data['per_mps']['per_redis_server_transfer_speed'].get(redis_server):
+      redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server] = {}
+      redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]['measured'] = {}
 
-    prune_array_data(redis_time_data[redis_server])
-    redis_time_data[redis_server]["measured"][global_start_time] = {}
-
-    if not redis_time_data['global_total']['per_redis_server_interaction_time'].get(redis_server):
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server] = {}
-      redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]["measured"] = {}
-
-    prune_array_data(redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server])
-    redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = {}
+    prune_array_data(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server])
+    prune_array_data(redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server])
+    redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = {}
+    redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time] = {}
 
     redis_connection = redis.Redis(host=redis_server,port=6379,db=1,socket_timeout=5,charset='utf-8', errors='strict')
     redis_pipeline = redis_connection.pipeline()
@@ -301,6 +266,7 @@ if __name__ == '__main__':
       print "(+) cache TTL is " + str(ttl)
 
     for file in list_of_files.splitlines():
+      timeout_alarm = 5
       if os.path.isfile(file):
         if "wtmp" not in file and "last.log" not in file:
           file_data = []
@@ -308,6 +274,7 @@ if __name__ == '__main__':
             hardware_identification_data = open(file, 'r').read()
             hardware_identification  = json.loads(hardware_identification_data.decode('utf-8','ignore'))
             for hi_key in hardware_identification.iterkeys():
+              key_cache_bytes = 0
               key_start_time = time.time()
               file_data = []
               file = "/etc/hardware_identification.json" + "@" + hi_key
@@ -319,61 +286,59 @@ if __name__ == '__main__':
 	      file_data.append(str(produce_wc(hardware_identification[hi_key])))
 	      # Push the obect into the cache.
               if not redis_servers_response_codes[redis_server]: 
-                redis_servers_response_codes[redis_server] = interact_with_redis_server(key, file_data)
-              # Total time to push the single key into the cache.
-              redis_time_data[redis_server]["measured"][global_start_time][store_key] = '%.3f' % (time.time() - key_start_time)
-            if options.verbose:
-              print file + "\n\t" + redis_server + "\n\t" + key + "\n\t" + redis_time_data[redis_server]["measured"][global_start_time][store_key] + " seconds\n"
+                (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
+                redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
+                if options.verbose:
+                  print key
+                  print "\t" + str(time.time() - key_start_time) + " seconds"
+                  print "\t" + str(key_cache_bytes) + " bytes"
+                  print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
+                  print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
           else:
+            key_cache_bytes = 0
             key_start_time = time.time()
             key = hostname + "#" + file
             store_key = key.split("#")[1]
 	    data = open(file,'rb').read()
-
             file_data.append(str(data))
             file_data.append(str(produce_file_md5sum(data)))
             file_data.append(str(os.stat(file)))
 	    file_data.append(str(produce_wc(data)))
-     
             # Make sure we aren't pushing objects larger than 10mb into RAM on the MPS.
             filesize = os.stat(file).st_size
             if filesize > 10485760:
-              file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(filesize / 1048576) + " megabytes"
-	      key = hostname + "#" + file + "@" + "file_size_exceeded"
+              if "extract_network_health" not in key:
+                file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(filesize / 1048576) + " megabytes"
+	        key = hostname + "#" + file + "@" + "file_size_exceeded"
+              else:
+                timeout_alarm = 15
 	    # Push the obect into the cache.
             if not redis_servers_response_codes[redis_server]: 
-              redis_servers_response_codes[redis_server] = interact_with_redis_server(key, file_data)
-            # Total time to push the single key into the cache.
-            redis_time_data[redis_server]["measured"][global_start_time][store_key] = '%.3f' % (time.time() - key_start_time)
-            if options.verbose:
-              print file + "\n\t" + redis_server + "\n\t" + key + "\n\t" + redis_time_data[redis_server]["measured"][global_start_time][store_key] + " seconds\n"
+              (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
+              redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
+              if options.verbose:
+                print key
+                print "\t" + str(time.time() - key_start_time) + " seconds"
+                print "\t" + str(key_cache_bytes) + " bytes"
+                print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
+                print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
 
     # Calculate how much time it took to interact with each MPS.
-    redis_time_data[redis_server]["measured"][global_start_time]["redis_server_interaction_time"] = '%.3f' % (time.time() - redis_server_start_time)
-    redis_time_data['global_total']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = redis_time_data[redis_server]["measured"][global_start_time]["redis_server_interaction_time"]
-    if options.verbose:
-      print "(+) Redis server " + redis_server + "  completed in " + redis_time_data[redis_server]["measured"][global_start_time]["redis_server_interaction_time"] + " seconds"
+    redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = time.time() - redis_server_start_time
 
-    start_calculation_time = time.time()
-    generate_per_redis_server_execution_cost(redis_server)
+    # Calculate the bits per second that we pushed to the MPS.
+    redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time] = float(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) / float(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time])
     if options.verbose:
-      print "(+) Calculated statistics from redis server " + redis_server + " in " + str('%.3f' % float(time.time() - start_calculation_time)) + " seconds"
-
-    # Dump the per redis_server JSON data
-    try:
-      with open(individual_redis_server_interaction_times, mode = "w") as fh:
-        json.dump(redis_time_data[redis_server], fh, sort_keys=True, indent=3)
-    except Exception, e:
-      print "We tried to dump to JSON, but couldnt.  Sorry." + str(e)
+      print "(+) Redis server " + redis_server + "  completed in " + str(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time]) + " seconds at a transfer rate of " + str(redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time]) + " bytes per second"
 
   # Calculate how much time it took to interact with all MPS.
-  redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = ('%.3f' % (time.time() - float(global_start_time)))
+  redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = time.time() - global_start_time
  
   start_calculation_time = time.time()
   generate_global_redis_server_execution_cost()
   if options.verbose:
-    print "(+) Calculated global statistics in " + str('%.3f' % float(time.time() - start_calculation_time)) + " seconds"
-    print "(+) Execution completed in " + redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] + " seconds"
+    print "(+) Calculated global statistics in " + str(time.time() - start_calculation_time) + " seconds"
+    print "(+) Execution completed in " + str(redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time]) + " seconds"
 
   for redis_server in redis_servers_response_codes.iterkeys():
     if not redis_servers_response_codes[redis_server]:
