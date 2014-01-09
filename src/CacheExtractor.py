@@ -1,4 +1,8 @@
 #!/usr/bin/python2.6
+# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_admin/CacheExtractor.py $
+# version       \$Revision: 86744 $
+# modifiedby    \$LastChangedBy: msvoboda $
+# lastmodified  \$Date: 2014-01-09 14:34:44 -0500 (Thu, 09 Jan 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -20,6 +24,7 @@ import RedisFinder
 import seco.range
 import bz2
 import time
+from requests import ConnectionError
 
 class CacheExtractor(RedisFinder.RedisFinder):
   def __init__(self,
@@ -153,7 +158,11 @@ class CacheExtractor(RedisFinder.RedisFinder):
     def threaded_object_finder(queue, redis_server):
       try:
         redis_connection = redis.Redis(host=redis_server,port=6379,db=self._database,socket_timeout=5,charset='utf-8', errors='strict')
-        queue.put(sorted(redis_connection.keys(self._search_string)))
+        try:
+          queue.put(sorted(redis_connection.keys(self._search_string)))
+        except requests.ConnectionError, e:
+          print "CacheExtractor.list_of_matching_named_objects().threaded_object_finder() Exception " + str(e)
+          os._exit(1)
       except redis.exceptions.ResponseError, e:
         print "CacheExtractor.list_of_matching_named_objects().threaded_object_finder() Exception " + str(e)
         os._exit(1)
@@ -211,11 +220,17 @@ class CacheExtractor(RedisFinder.RedisFinder):
     if self._file:
       try:
         if machines:
-          boxes = open(self._file,'r').readlines()
+          if self._file == "-":
+            boxes = sys.stdin.readlines()
+          else:
+            boxes = open(self._file,'r').readlines()
           for box in boxes:
             machines.append(box)
         else:
-          machines = open(self._file,'r').readlines()
+          if self._file == "-":
+            machines = sys.stdin.readlines()
+          else:
+            machines = open(self._file,'r').readlines()
       except Exception, e:
         print "The file " + self._file + " can not be opened.  Does it exist?  Exiting."
         sys.exit(1)
