@@ -24,7 +24,6 @@ import RedisFinder
 import seco.range
 import bz2
 import time
-from requests import ConnectionError
 
 class CacheExtractor(RedisFinder.RedisFinder):
   def __init__(self,
@@ -160,7 +159,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
         redis_connection = redis.Redis(host=redis_server,port=6379,db=self._database,socket_timeout=5,charset='utf-8', errors='strict')
         try:
           queue.put(sorted(redis_connection.keys(self._search_string)))
-        except requests.ConnectionError, e:
+        except Exception, e:
           print "CacheExtractor.list_of_matching_named_objects().threaded_object_finder() Exception " + str(e)
           os._exit(1)
       except redis.exceptions.ResponseError, e:
