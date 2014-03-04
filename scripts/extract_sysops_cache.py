@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_utilities/extract_sysops_cache.py $
-# version       \$Revision: 73253 $
+# version       \$Revision: 102566 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2013-11-13 14:10:45 -0500 (Wed, 13 Nov 2013) $
+# lastmodified  \$Date: 2014-03-04 11:40:26 -0500 (Tue, 04 Mar 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -78,11 +78,16 @@ def validate_cli_args():
     print "No valid option passed.  Exiting"
     sys.exit(1)
 
-  if (options.contents	and (options.md5sum	or options.stat		or options.wordcount) or
-     options.md5sum	and (options.contents	or options.stat		or options.wordcount) or
-     options.stat	and (options.contents	or options.md5sum	or options.wordcount) or
-     options.wordcount	and (options.contents	or options.md5sum	or options.stat)):
-    print "You can only use --contents, --md5sum, --stat, or --wordcount.  Pick one."
+  if options.time_human and options.time_updated:
+    print "You can only use --time, --time-updated or --time-human. Pick one"
+    sys.exit(1)
+
+  if (options.contents	and (options.md5sum	or options.stat		or options.wordcount	or options.time) or
+     options.md5sum	and (options.contents	or options.stat		or options.wordcount	or options.time) or
+     options.stat	and (options.contents	or options.md5sum	or options.wordcount	or options.time) or
+     options.wordcount	and (options.contents	or options.md5sum	or options.stat		or options.time) or
+     options.time	and (options.contents   or options.md5sum       or options.stat		or options.wordcount)):
+    print "You can only use --contents, --md5sum, --stat, --wordcount, or --time.  Pick one."
     sys.exit(1)
  
   if options.range_query and options.site is None and options.scope != "global":
@@ -138,16 +143,18 @@ def compare_two_extracted_objects(key1, data1, key2, data2):
       print "os.stat() of " + key1 + " and os.stat() of " + key2 + " are identical"
     if options.wordcount:
       print "wordcount of " + key1 + " and wordcount of " + key2 + " are identical"
+    if options.time:
+      print "cache insertion time of " + key1 + " and cache insertion time of " + key2 + " are identical"
   else:
     results = []
     compare_array = list(differ.compare(data1.splitlines(), data2.splitlines()))
     for line in compare_array:
       if search_result.match(line):
-        print search_result.sub(search_string + "\t", line)
+        print search_result.sub(search_string.ljust(100), line)
       elif compare_result.match(line):
-        print compare_result.sub(compare_string + "\t", line)
+        print compare_result.sub(compare_string.ljust(100), line)
       elif matched_result.match(line):
-        print matched_result.sub(matched_string + "\t", line)
+        print matched_result.sub(matched_string.ljust(100), line)
   print
 ###############################################################################################
 if __name__ == '__main__':
@@ -173,19 +180,31 @@ if __name__ == '__main__':
   parser.add_option("--contents",
     action = "store_true",
     dest = "contents",
-    help = "Print the contents of the file at the given name")
+    help = "Print the contents of the key at the given name")
   parser.add_option("--md5sum",
     action = "store_true",
     dest = "md5sum",
-    help = "Print the md5sum of the file at the given name")
+    help = "Print the md5sum of the key at the given name")
   parser.add_option("--stat",
     action = "store_true",
     dest = "stat",
-    help = "Print the stat of the file at the given name")
+    help = "Print the stat of the key at the given name")
   parser.add_option("--wordcount",
     action = "store_true",
     dest = "wordcount",
-    help = "Print the wordcount of the file at the given name")
+    help = "Print the wordcount of the key at the given name")
+  parser.add_option("--time",
+    action = "store_true",
+    dest = "time",
+    help = "Print the cache insertion time of the key at the given name")
+  parser.add_option("--time-human",
+    action = "store_true",
+    dest = "time_human",
+    help = "Print the cache insertion time of the key at the given name in human readable format")
+  parser.add_option("--time-updated",
+    action = "store_true",
+    dest = "time_updated",
+    help = "Print how long ago a key was inserted into the cache in human readable format")
   parser.add_option("--range-servers",
     action = "store",
     dest = "range_servers",
@@ -236,6 +255,16 @@ if __name__ == '__main__':
     help = "When using --compare-all, display the list of machines that matched the various keys being used to compare.")
 
   (options,args) = parser.parse_args()
+
+  if options.time_human:
+    options.time = True
+    import time
+
+  if options.time_updated:
+    options.time = True
+    import time
+    import datetime
+
   validate_cli_args()
 
 ###############################################################################################################################################
@@ -251,6 +280,7 @@ if __name__ == '__main__':
 						md5sum = options.md5sum,
 						stat = options.stat,
 						wordcount = options.wordcount,
+						time = options.time,
 						contents = options.contents,
 						range_query = options.range_query,
 						file = options.file,
@@ -272,13 +302,14 @@ if __name__ == '__main__':
       host, file = key.split('#')
 
       if not redisResults._gold[key]:
-        # option 2. This is --search without --contents, --md5sum, --stat, --wordcount
+        # option 2. This is --search without --contents, --md5sum, --stat, --wordcount, --time
         # option 3. This is --list-files
         if (options.search and
 	   options.contents is None and
 	   options.md5sum is None and
 	   options.stat is None and
-	   options.wordcount is None) or options.list_files:
+	   options.wordcount is None and
+	   options.time is None) or options.list_files:
           print key
           continue
 
@@ -286,20 +317,31 @@ if __name__ == '__main__':
       # option 5. This is --search with --md5sum
       # option 6. This is --search with --stat
       # option 7. This is --search with --wordcount
-      if options.search and (options.contents or options.md5sum or options.stat or options.wordcount):
+      # option 8. This is --search with --time
+      if options.search and (options.contents or options.md5sum or options.stat or options.wordcount or options.time):
         if options.prefix_hostnames:
           beginnning_of_line = re.compile("^")
           keystring = key.ljust(50)
           for line in redisResults._gold[key].splitlines():
-            print beginnning_of_line.sub(keystring + "\t", line)
+            if options.time_human:
+              print beginnning_of_line.sub(keystring.ljust(100), time.ctime(float(line)))
+            elif options.time_updated:
+              print beginnning_of_line.sub(keystring.ljust(100), str(datetime.timedelta(seconds=int(time.time() - float(redisResults._gold[key].strip())))))
+            else:
+              print beginnning_of_line.sub(keystring.ljust(100), line)
         else:
-          print redisResults._gold[key].strip()
+          if options.time_human:
+            print time.ctime(float(redisResults._gold[key].strip()))
+          elif options.time_updated:
+            print datetime.timedelta(seconds=int(time.time() - float(redisResults._gold[key].strip())))
+          else:
+            print redisResults._gold[key].strip()
     sys.exit(0)
 
 ###############################################################################################################################################
-  # option 8, This is --search with --compare
+  # option 9, This is --search with --compare
   if options.search and options.compare:
-    if not options.contents and not options.stat and not options.md5sum and not options.wordcount:
+    if not options.contents and not options.stat and not options.md5sum and not options.wordcount and not options.time:
       options.contents = True
     # If using --compare, the --range-query option must be used on the compareResults object to return multiple results, not 
     # the redisResults object.  The redisResults object must return exactly one item.
@@ -315,6 +357,7 @@ if __name__ == '__main__':
 						md5sum = options.md5sum,
 						stat = options.stat,
 						wordcount = options.wordcount,
+						time = options.time,
 						contents = options.contents,
 						range_query = False,  # this is modified.  The range_query applies to the compareResults object.
                 				file = options.file,
@@ -338,6 +381,7 @@ if __name__ == '__main__':
 						md5sum = options.md5sum,
 						stat = options.stat,
                                  		wordcount = options.wordcount,
+						time = options.time,
 						contents = options.contents,
 						range_query = options.range_query,
                 				file = options.file,
@@ -357,7 +401,7 @@ if __name__ == '__main__':
         compare_two_extracted_objects(key, redisResults._gold[key], compare_key, compareResults._gold[compare_key])
     sys.exit(0)
 ###############################################################################################################################################
-  # option 8, This is --compare-all
+  # option 10, This is --compare-all
   if options.search and options.compare_all:
     try:
       redisResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
@@ -365,6 +409,7 @@ if __name__ == '__main__':
 						site = options.site,
 						range_servers = options.range_servers,
 						prefix_hostnames = options.prefix_hostnames,
+						return_randomized_servers = options.load_balance,
 						md5sum = True,
 						range_query = options.range_query,
                 				file = options.file,
@@ -404,7 +449,7 @@ if __name__ == '__main__':
       binger[key].append(hashpipe[md5sum][1])	# This is the list of keys with the matching md5sum
 
     # Now that we are ready to start comparing data, set --contents to true.
-    if not options.contents and not options.stat and not options.md5sum and not options.wordcount:
+    if not options.contents and not options.stat and not options.md5sum and not options.wordcount and not options.time:
       options.contents = True
 
     # binger is now a dictionary with each item being a key of a unique md5sum.  perform a CacheExtractor search and compare with its friends.
@@ -454,6 +499,7 @@ if __name__ == '__main__':
 						md5sum = options.md5sum,
 						stat = options.stat,
 						wordcount = options.wordcount,
+						time = options.time,
 						contents = options.contents,
 						range_query = options.range_query,
                 				file = options.file,
@@ -478,6 +524,7 @@ if __name__ == '__main__':
 						md5sum = options.md5sum,
 						stat = options.stat,
 						wordcount = options.wordcount,
+						time = options.time,
 						contents = options.contents,
 						range_query = options.range_query,
                 				file = options.file,

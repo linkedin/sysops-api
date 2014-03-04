@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/cf-agent_modules/module_populate_mps_cache $
-# version       \$Revision: 93902 $
+# version       \$Revision: 102540 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2014-02-04 09:02:06 -0500 (Tue, 04 Feb 2014) $
+# lastmodified  \$Date: 2014-03-04 09:51:45 -0500 (Tue, 04 Mar 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -103,6 +103,7 @@ def interact_with_redis_server(key, file_data, timeout_alarm):
     # Begin Redis exception
     try:
       tempkey = hostname + "$" + str(uuid.uuid4())
+      redis_pipeline.expire(tempkey,ttl)
       for object in file_data:
         compressed_object = bz2.compress(object)
         redis_pipeline.rpush(tempkey,compressed_object)
@@ -184,7 +185,7 @@ if __name__ == '__main__':
     sys.exit(1)
 
   if options.ttl is None:
-    ttl = 3600
+    ttl = 21600
   else:
     ttl = options.ttl
 
@@ -284,6 +285,7 @@ if __name__ == '__main__':
               file_data.append(str(produce_file_md5sum(hardware_identification[hi_key])))
               file_data.append(str("No os.stat() is available.  hardware_identification is comprised of executed commands."))
 	      file_data.append(str(produce_wc(hardware_identification[hi_key])))
+	      file_data.append(str(time.time()))
 	      # Push the obect into the cache.
               if not redis_servers_response_codes[redis_server]: 
                 (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
@@ -304,6 +306,7 @@ if __name__ == '__main__':
             file_data.append(str(produce_file_md5sum(data)))
             file_data.append(str(os.stat(file)))
 	    file_data.append(str(produce_wc(data)))
+	    file_data.append(str(time.time()))
             # Make sure we aren't pushing objects larger than 10mb into RAM on the MPS.
             filesize = os.stat(file).st_size
             if filesize > 10485760:

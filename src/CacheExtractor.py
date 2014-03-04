@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_admin/CacheExtractor.py $
-# version       \$Revision: 86744 $
+# version       \$Revision: 102557 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2014-01-09 14:34:44 -0500 (Thu, 09 Jan 2014) $
+# lastmodified  \$Date: 2014-03-04 11:10:50 -0500 (Tue, 04 Mar 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -40,7 +40,8 @@ class CacheExtractor(RedisFinder.RedisFinder):
 		md5sum = False,
 		stat = False,
                 wordcount = False,
-		contents = False):
+		contents = False,
+		time = False):
 
     self._cm_conf = open('/etc/cm.conf','r')
     self._redis_corelist = []
@@ -54,6 +55,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
     self._contents = contents
     self._stat = stat
     self._wordcount = wordcount
+    self._time = time
     self._search_string = search_string
     self._prefix_hostnames = prefix_hostnames
     self._return_randomized_servers = return_randomized_servers
@@ -66,10 +68,12 @@ class CacheExtractor(RedisFinder.RedisFinder):
     # value at array index 1 is the md5sum of the file
     # value at array index 2 is the os.stat contents of the file.
     # value at array index 3 is the wordcount of the file
+    # value at array index 4 is the cache insertion time of the file
     self._index_contents = 0
     self._index_md5sum = 1
     self._index_stat = 2
     self._index_wordcount = 3
+    self._index_time = 4
 
     self._range_servers = []
     if range_servers is not None:
@@ -124,6 +128,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
       print "(+) CacheExtractor __init__  contents", self._contents
       print "(+) CacheExtractor __init__  stat", self._stat
       print "(+) CacheExtractor __init__  wordcount", self._wordcount
+      print "(+) CacheExtractor __init__  time", self._time
       print "(+) CacheExtractor __init__  search_string", self._search_string
       print "(+) CacheExtractor __init__  return_randomized_servers", self._return_randomized_servers
       print "(+) CacheExtractor __init__  cm.conf", self._cm_conf
@@ -272,6 +277,8 @@ class CacheExtractor(RedisFinder.RedisFinder):
             redis_pipeline.lindex(named_object, self._index_stat)
           elif self._wordcount:
             redis_pipeline.lindex(named_object, self._index_wordcount)
+          elif self._time:
+            redis_pipeline.lindex(named_object, self._index_time)
 
         # This lies outside the loop of named_objects.  The pipeline.execute() below will issue a single redis query to fetch everything at once.
         # By using pipelines instead of individual fetches, this reduces cross communcation between the client and server.  See here for more details.
@@ -292,10 +299,13 @@ class CacheExtractor(RedisFinder.RedisFinder):
         named_object = self._named_object_results[redis_server].pop()
         host, file = named_object.split('#')
         if self._object_store[redis_server]:
-          # We are in data extraction mode with contents, md5sum, stat, or wordcount.
+          # We are in data extraction mode with contents, md5sum, stat, wordcount, or time
           contents_of_named_object = self._object_store[redis_server].pop()
           if contents_of_named_object:
-            self._gold[named_object] = bz2.decompress(contents_of_named_object)
+            if self._return_randomized_servers == "True":
+              self._gold[named_object] = bz2.decompress(contents_of_named_object)
+            else:
+	      self._gold[named_object + "@" + redis_server] = bz2.decompress(contents_of_named_object)
         else:
           # We are either in --search or --list-files operations.  We didn't actually extract data.  if we are in --list-files, we want a list of unique
           # objects, so we build a dictionary to perform the uniques for us.
@@ -303,7 +313,10 @@ class CacheExtractor(RedisFinder.RedisFinder):
             uniques[file] = 1
           else:
             # We are searching, so we want non-unique filename objects across multiple hosts
-            self._gold[named_object] = None
+            if self._return_randomized_servers == "True":
+              self._gold[named_object] = None
+            else:
+              self._gold[named_object + "@" + redis_server] = None
 
         if self._verbose:
           print "(+) CacheExtractor.threaded_object_extractor() file " + file + " from host " + host + " discovered from redis server " + redis_server
