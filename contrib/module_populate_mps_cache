@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/cf-agent_modules/module_populate_mps_cache $
-# version       \$Revision: 102540 $
+# version       \$Revision: 123877 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2014-03-04 09:51:45 -0500 (Tue, 04 Mar 2014) $
+# lastmodified  \$Date: 2014-06-16 12:07:58 -0400 (Mon, 16 Jun 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -97,20 +97,31 @@ def interact_with_redis_server(key, file_data, timeout_alarm):
   old_handler = signal.signal(signal.SIGALRM, timeout_handler) 
   signal.alarm(timeout_alarm) 
   return_code = 0
+  key_cache_md5sum = 0
 
   # Begin timeout exception
   try:
     # Begin Redis exception
     try:
-      tempkey = hostname + "$" + str(uuid.uuid4())
-      redis_pipeline.expire(tempkey,ttl)
-      for object in file_data:
-        compressed_object = bz2.compress(object)
-        redis_pipeline.rpush(tempkey,compressed_object)
-        key_cache_bytes += sys.getsizeof(compressed_object)
-      redis_pipeline.rename(tempkey, key)
-      redis_pipeline.expire(key,ttl)
-      redis_pipeline.execute()
+      # fetch the current md5sum in the cache and see if we have the same md5sum..
+      # the md5sum lives at index[1].
+      data = redis_connection.lindex(key, 1)
+      if data:
+        key_cache_md5sum = bz2.decompress(data)
+      if key_cache_md5sum == file_data[1]:
+        # Since the md5sum matches, the contents of the key hasn't updated.  Simply reset the TTL and exit this routine.
+        redis_connection.expire(key, ttl)
+        return (return_code, key_cache_bytes)
+      else:
+        tempkey = hostname + "$" + str(uuid.uuid4())
+        redis_pipeline.expire(tempkey,ttl)
+        for object in file_data:
+          compressed_object = bz2.compress(object)
+          redis_pipeline.rpush(tempkey,compressed_object)
+          key_cache_bytes += sys.getsizeof(compressed_object)
+        redis_pipeline.rename(tempkey, key)
+        redis_pipeline.expire(key,ttl)
+        redis_pipeline.execute()
     except redis.exceptions.ConnectionError, e:
       print "=connection_error_redis_server=" + redis_server
       print "+redis_server_connection_failure"
@@ -224,12 +235,17 @@ if __name__ == '__main__':
     redis_time_data['global_total'] = {}
     redis_time_data['per_mps'] = {}
 
-  if not redis_time_data['global_total'].get('total_redis_interaction_time'):
-    redis_time_data['global_total']['total_redis_interaction_time'] = {}
-    redis_time_data['global_total']['total_redis_interaction_time']['measured'] = {}
-  if not redis_time_data['global_total'].get('total_redis_transfer_speed'):
-    redis_time_data['global_total']['total_redis_transfer_speed'] = {}
-    redis_time_data['global_total']['total_redis_transfer_speed']['measured'] = {}
+  try:
+    if not redis_time_data['global_total'].get('total_redis_interaction_time'):
+      redis_time_data['global_total']['total_redis_interaction_time'] = {}
+      redis_time_data['global_total']['total_redis_interaction_time']['measured'] = {}
+    if not redis_time_data['global_total'].get('total_redis_transfer_speed'):
+      redis_time_data['global_total']['total_redis_transfer_speed'] = {}
+      redis_time_data['global_total']['total_redis_transfer_speed']['measured'] = {}
+  except KeyError:
+    os.remove(global_sysops_api_interaction_times)
+    sys.exit(1)
+     
 
   if not redis_time_data['per_mps'].get('per_redis_server_interaction_time'):
     redis_time_data['per_mps']['per_redis_server_interaction_time'] = {}
@@ -269,53 +285,23 @@ if __name__ == '__main__':
     for file in list_of_files.splitlines():
       timeout_alarm = 5
       if os.path.isfile(file):
-        if "wtmp" not in file and "last.log" not in file:
-          file_data = []
-          if "/etc/hardware_identification" in file:
-            hardware_identification_data = open(file, 'r').read()
-            hardware_identification  = json.loads(hardware_identification_data.decode('utf-8','ignore'))
-            for hi_key in hardware_identification.iterkeys():
-              key_cache_bytes = 0
-              key_start_time = time.time()
-              file_data = []
-              file = "/etc/hardware_identification.json" + "@" + hi_key
-              key = hostname + "#" + file
-              store_key = key.split("#")[1]
-              file_data.append(str(hardware_identification[hi_key]))
-              file_data.append(str(produce_file_md5sum(hardware_identification[hi_key])))
-              file_data.append(str("No os.stat() is available.  hardware_identification is comprised of executed commands."))
-	      file_data.append(str(produce_wc(hardware_identification[hi_key])))
-	      file_data.append(str(time.time()))
-	      # Push the obect into the cache.
-              if not redis_servers_response_codes[redis_server]: 
-                (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
-                redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
-                if options.verbose:
-                  print key
-                  print "\t" + str(time.time() - key_start_time) + " seconds"
-                  print "\t" + str(key_cache_bytes) + " bytes"
-                  print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
-                  print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
-          else:
+        file_data = []
+        if "/etc/hardware_identification" in file:
+          hardware_identification_data = open(file, 'r').read()
+          hardware_identification  = json.loads(hardware_identification_data.decode('utf-8','ignore'))
+          for hi_key in hardware_identification.iterkeys():
             key_cache_bytes = 0
             key_start_time = time.time()
+            file_data = []
+            file = "/etc/hardware_identification.json" + "@" + hi_key
             key = hostname + "#" + file
             store_key = key.split("#")[1]
-	    data = open(file,'rb').read()
-            file_data.append(str(data))
-            file_data.append(str(produce_file_md5sum(data)))
-            file_data.append(str(os.stat(file)))
-	    file_data.append(str(produce_wc(data)))
-	    file_data.append(str(time.time()))
-            # Make sure we aren't pushing objects larger than 10mb into RAM on the MPS.
-            filesize = os.stat(file).st_size
-            if filesize > 10485760:
-              if "extract_network_health" not in key:
-                file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(filesize / 1048576) + " megabytes"
-	        key = hostname + "#" + file + "@" + "file_size_exceeded"
-              else:
-                timeout_alarm = 15
-	    # Push the obect into the cache.
+            file_data.append(str(hardware_identification[hi_key]))
+            file_data.append(str(produce_file_md5sum(hardware_identification[hi_key])))
+            file_data.append(str("No os.stat() is available.  hardware_identification is comprised of executed commands."))
+            file_data.append(str(produce_wc(hardware_identification[hi_key])))
+            file_data.append(str(time.time()))
+            # Push the obect into the cache.
             if not redis_servers_response_codes[redis_server]: 
               (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
               redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
@@ -325,6 +311,35 @@ if __name__ == '__main__':
                 print "\t" + str(key_cache_bytes) + " bytes"
                 print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
                 print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
+        else:
+          key_cache_bytes = 0
+          key_start_time = time.time()
+          key = hostname + "#" + file
+          store_key = key.split("#")[1]
+          data = open(file,'rb').read()
+          file_data.append(str(data))
+          file_data.append(str(produce_file_md5sum(data)))
+          file_data.append(str(os.stat(file)))
+          file_data.append(str(produce_wc(data)))
+          file_data.append(str(time.time()))
+          # Make sure we aren't pushing objects larger than 10mb into RAM on the MPS.
+          filesize = os.stat(file).st_size
+          if filesize > 10485760:
+            if "extract_network_health" not in key:
+              file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(filesize / 1048576) + " megabytes"
+              key = hostname + "#" + file + "@" + "file_size_exceeded"
+            else:
+              timeout_alarm = 15
+          # Push the obect into the cache.
+          if not redis_servers_response_codes[redis_server]: 
+            (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
+            redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
+            if options.verbose:
+              print key
+              print "\t" + str(time.time() - key_start_time) + " seconds"
+              print "\t" + str(key_cache_bytes) + " bytes"
+              print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
+              print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
 
     # Calculate how much time it took to interact with each MPS.
     redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = time.time() - redis_server_start_time
