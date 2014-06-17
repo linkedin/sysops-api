@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_admin/CacheExtractor.py $
-# version       \$Revision: 102557 $
+# version       \$Revision: 123922 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2014-03-04 11:10:50 -0500 (Tue, 04 Mar 2014) $
+# lastmodified  \$Date: 2014-06-16 15:49:08 -0400 (Mon, 16 Jun 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -23,7 +23,12 @@ sys.path.append("/usr/local/admin")
 import RedisFinder
 import seco.range
 import bz2
-import time
+
+# System identifcation
+import __main__
+import uuid
+import pwd
+import json
 
 class CacheExtractor(RedisFinder.RedisFinder):
   def __init__(self,
@@ -37,6 +42,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
 		list_files = False,
 		prefix_hostnames = False,
 		verbose = False,
+                cost = False,
 		md5sum = False,
 		stat = False,
                 wordcount = False,
@@ -50,6 +56,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
     self._gold = {}
     self._number_of_results = 0
     self._verbose = verbose
+    self._cost = cost
     self._list_files = list_files
     self._md5sum = md5sum
     self._contents = contents
@@ -111,38 +118,75 @@ class CacheExtractor(RedisFinder.RedisFinder):
     # The CacheExtractor object inherits functions in RedisFinder where this work is being processed.
     self.query_range_for_redis_corelist()
 
-    self._redis_servers = self.get_redis_corelist()
+    # O/S information that gets sent to each MPS for each search.
+    self._user = pwd.getpwuid(os.getuid())
+    self._uuid = str(uuid.uuid4())
+    self._cwd = os.getcwd()
+    import time
+    if ".linkedin.com" not in platform.node():
+      self._hostname = platform.node() + ".linkedin.com"
+    else:
+      self._hostname = platform.node()
+
+    self.info = {}
+    self.info = {}
+    self.info['redis_servers'] = {}
+    self.info['query'] = {}
+    self.info['totals'] = {}
+
+    self.info['totals']['total_bytes_redis_cache_downloaded'] = 0
+    self.info['totals']['total_bytes_results_decompressed'] = 0
+    self.info['totals']['total_keys_matched'] = 0
+    self.info['totals']['total_time_start'] = time.time()
+    self.info['totals']['total_time_elapsed'] = None
+
+    self.info['query']['pw_name'] = self._user.pw_name
+    self.info['query']['pw_uid'] = self._user.pw_uid
+    self.info['query']['pw_gid'] = self._user.pw_gid
+    self.info['query']['pw_gecos'] = self._user.pw_gecos
+    self.info['query']['pw_dir'] = self._user.pw_dir
+    self.info['query']['pw_shell'] = self._user.pw_shell
+    self.info['query']['utility'] =  __main__.__file__
+    self.info['query']['self._scope'] = self._scope
+    self.info['query']['self._range_query'] = self._range_query
+    self.info['query']['self._database'] = self._database
+    self.info['query']['self._redis_corelist'] = self._redis_corelist
+    self.info['query']['self._site'] = self._site
+    self.info['query']['self._list_files'] = self._list_files
+    self.info['query']['self._file'] = self._file
+    self.info['query']['self._prefix_hostnames'] = self._prefix_hostnames
+    self.info['query']['self._md5sum'] = self._md5sum
+    self.info['query']['self._contents'] = self._contents
+    self.info['query']['self._stat'] = self._stat
+    self.info['query']['self._wordcount'] = self._wordcount
+    self.info['query']['self._time'] = self._time
+    self.info['query']['self._search_string'] = self._search_string
+    self.info['query']['self._return_randomized_servers'] = self._return_randomized_servers
+    self.info['query']['self._range_servers'] = self._range_servers
+    self.info['query']['self._redis_corelist'] = self._redis_corelist
+    self.info['query']['self._hostname'] = self._hostname
+    self.info['query']['self._cwd'] = self._cwd
 
     if self._verbose:
-      print "(+) CacheExtractor __init__  scope", self._scope
-      print "(+) CacheExtractor __init__  range_query", self._range_query
-      print "(+) CacheExtractor __init__  database", self._database
-      print "(+) CacheExtractor __init__  redis_corelist", self._redis_corelist
-      print "(+) CacheExtractor __init__  object_store", self._object_store
-      print "(+) CacheExtractor __init__  named_object_results", self._named_object_results
-      print "(+) CacheExtractor __init__  site", self._site
-      print "(+) CacheExtractor __init__  list_files", self._list_files
-      print "(+) CacheExtractor __init__  file", self._file
-      print "(+) CacheExtractor __init__  prefix_hostnames", self._prefix_hostnames
-      print "(+) CacheExtractor __init__  md5sum", self._md5sum
-      print "(+) CacheExtractor __init__  contents", self._contents
-      print "(+) CacheExtractor __init__  stat", self._stat
-      print "(+) CacheExtractor __init__  wordcount", self._wordcount
-      print "(+) CacheExtractor __init__  time", self._time
-      print "(+) CacheExtractor __init__  search_string", self._search_string
-      print "(+) CacheExtractor __init__  return_randomized_servers", self._return_randomized_servers
-      print "(+) CacheExtractor __init__  cm.conf", self._cm_conf
-      print "(+) CacheExtractor __init__  range_servers", self._range_servers
-      print "(+) CacheExtractor __init__  redis_servers", self._redis_servers
-   
+      for key in sorted(self.info['query'].iterkeys()):
+        print "(+) CacheExtractor __init__  {0} {1}".format(key, self.info['query'][key])
+
     # Do actual work.
     if self._search_string:
       self.list_of_matching_named_objects()
       self.extract_named_objects()
 
+    # If requested, query how expensive the given query was.
+    if self._cost:
+      self._gold = None
+      self.display_cost_of_cache()
+###############################################################################################
+  def display_cost_of_cache(self):
+    print json.dumps(self.info['totals'], indent=3, sort_keys=True)
+    print json.dumps(self.info['redis_servers'], indent=3, sort_keys=True)
 ###############################################################################################
   def print_redis_server_information(self):
-    for redis_server in self._redis_servers:
+    for redis_server in self._redis_corelist:
       redis_connection = redis.Redis(host=redis_server,port=6379,db=self._database,socket_timeout=5,charset='utf-8', errors='strict')
       redis_info = redis_connection.info()
       for key in redis_info.iterkeys():
@@ -174,7 +218,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
 
     queue = Queue.Queue()
     threads = []
-    for redis_server in self._redis_servers:
+    for redis_server in self._redis_corelist:
       thread = threading.Thread(target=threaded_object_finder, args=(queue, redis_server))
       threads.append(thread)
       thread.start()
@@ -188,7 +232,12 @@ class CacheExtractor(RedisFinder.RedisFinder):
       thread.join()
 
     if self._number_of_results == 0:
-      raise Exception('No results were found from the search.  Please try your search again.  use --list-files to get an idea of what objects exist in the cache.')
+      raise Exception('''No results were found from the search.  Please try your search again.  use --list-files to get an idea of what objects exist in the cache.
+Its possible that you are in the wrong scope.  This utility uses a local scope by default.
+You might want to be using --scope site, --scope global, or --site <datacenter> to adjust your scope.
+https://iwww.corp.linkedin.com/wiki/cf/display/IST/Extracting+the+sysops+cache+for+fun+and+profit#Extractingthesysopscacheforfunandprofit-Levelsofscope
+
+If executing extract_sysops_cache.py, use --help for some basic examples of scope.''')
 
     # When we insert keys into the cache, we insert with <hostname>$<uuid>.  At the end of insertion, we rename the key from this uuid to the actual key name.
     # The actual key name will be in the form <hostname>#<filename>
@@ -196,7 +245,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
     # the key at the exact moment of insertion.  If we dont find a key with "#" in the name of the key, remove it from results.  We shouldn't be searching against
     # objects that dont contain # in the keyname.  
     temp_results = {}
-    for redis_server in self._redis_servers:
+    for redis_server in self._redis_corelist:
       temp_results[redis_server] = []
       for named_object in self._named_object_results[redis_server]:
         if "#" in named_object:
@@ -243,7 +292,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
     # Both range queries and reading from a file are both restrictive actions.  We only return objects if we match from either source.
     if self._range_query or self._file:
       temp_results = {}
-      for redis_server in self._redis_servers:
+      for redis_server in self._redis_corelist:
         temp_results[redis_server] = []
         for named_object in self._named_object_results[redis_server]:
           for machine in machines:
@@ -255,17 +304,42 @@ class CacheExtractor(RedisFinder.RedisFinder):
   def extract_named_objects(self):
 
     threads = []
-    for redis_server in self._redis_servers:
+    for redis_server in self._redis_corelist:
       thread = threading.Thread(target=self.threaded_object_extractor, args=(redis_server,))
       threads.append(thread)
       thread.start()
 
     for thread in threads:
       thread.join()
+
+    # Update totals for all cost hitting all redis servers.
+    for redis_server in self._redis_corelist:
+      self.info['totals']['total_bytes_redis_cache_downloaded'] += self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded']
+      self.info['totals']['total_bytes_results_decompressed'] += self.info['redis_servers'][redis_server][self._uuid]['bytes_results_decompressed']
+      self.info['totals']['total_keys_matched'] += self.info['redis_servers'][redis_server][self._uuid]['keys_matched']
+
+    import time
+    self.info['totals']['total_time_finished'] = time.time()
+    self.info['totals']['total_time_elapsed'] =  self.info['totals']['total_time_finished'] - self.info['totals']['total_time_start']
+    self.info['totals']['total_bytes_per_second'] = int(self.info['totals']['total_bytes_redis_cache_downloaded'] / self.info['totals']['total_time_elapsed'])
+    self.info['totals']['total_human_readable_mb_redis_cache_downloaded'] = '%.3f' % (self.info['totals']['total_bytes_redis_cache_downloaded'] / 1048576.0)
+    self.info['totals']['total_human_readable_mb_results_decompressed'] = '%.3f' % (self.info['totals']['total_bytes_results_decompressed'] / 1048576.0)
+    self.info['totals']['total_human_readable_mb_per_second'] = '%.3f' % (self.info['totals']['total_bytes_per_second'] / 1048576.0)
+    if self.info['totals']['total_bytes_redis_cache_downloaded'] != 0:
+      self.info['totals']['total_compression_ratio'] = '%.3f' % (float(self.info['totals']['total_bytes_results_decompressed']) / float(self.info['totals']['total_bytes_redis_cache_downloaded']))
+
 ###############################################################################################
   def threaded_object_extractor(self, redis_server):
+
       redis_connection = redis.Redis(host=redis_server,port=6379,db=self._database,socket_timeout=5,charset='utf-8', errors='strict')
       redis_pipeline = redis_connection.pipeline()
+      import time
+      self.info['redis_servers'][redis_server] = {}
+      self.info['redis_servers'][redis_server][self._uuid] = {}
+      self.info['redis_servers'][redis_server][self._uuid]['redis_server'] = redis_server
+      self.info['redis_servers'][redis_server][self._uuid]['time_start'] = time.time()
+      self.info['redis_servers'][redis_server][self._uuid]['keys_matched'] = len(self._named_object_results[redis_server])
+      self._object_store[redis_server] = []
 
       try:
         for named_object in self._named_object_results[redis_server]:
@@ -283,9 +357,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
         # This lies outside the loop of named_objects.  The pipeline.execute() below will issue a single redis query to fetch everything at once.
         # By using pipelines instead of individual fetches, this reduces cross communcation between the client and server.  See here for more details.
         # https://github.com/andymccurdy/redis-py 
-        self._object_store[redis_server] = []
         self._object_store[redis_server] = redis_pipeline.execute()
-
       except redis.exceptions.ResponseError, e:
         print "CacheExtractor.threaded_object_extractor() Exception " + str(e)
         sys.exit(1)
@@ -294,7 +366,10 @@ class CacheExtractor(RedisFinder.RedisFinder):
       # named_object_results[redis_server] = names of the keys
       # object_store[redis_server] = whatever we extracted from the redis server for all of the keys
       # gold[name of key] = whatever we extracted
+      self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded'] = 0
+      self.info['redis_servers'][redis_server][self._uuid]['bytes_results_decompressed'] = 0
       uniques = {}
+
       while self._named_object_results[redis_server]:
         named_object = self._named_object_results[redis_server].pop()
         host, file = named_object.split('#')
@@ -302,10 +377,13 @@ class CacheExtractor(RedisFinder.RedisFinder):
           # We are in data extraction mode with contents, md5sum, stat, wordcount, or time
           contents_of_named_object = self._object_store[redis_server].pop()
           if contents_of_named_object:
+            decompressed_data = bz2.decompress(contents_of_named_object)
+            self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded'] += sys.getsizeof(contents_of_named_object)
+            self.info['redis_servers'][redis_server][self._uuid]['bytes_results_decompressed'] += sys.getsizeof(decompressed_data)
             if self._return_randomized_servers == "True":
-              self._gold[named_object] = bz2.decompress(contents_of_named_object)
+              self._gold[named_object] = decompressed_data
             else:
-	      self._gold[named_object + "@" + redis_server] = bz2.decompress(contents_of_named_object)
+	      self._gold[named_object + "@" + redis_server] = decompressed_data
         else:
           # We are either in --search or --list-files operations.  We didn't actually extract data.  if we are in --list-files, we want a list of unique
           # objects, so we build a dictionary to perform the uniques for us.
@@ -324,5 +402,23 @@ class CacheExtractor(RedisFinder.RedisFinder):
       if self._list_files:
         for file in uniques.iterkeys():
           self._gold['files#' + file] = None
-        
+
+      # Update per-redis server information and publish to each redis server its own statistics
+      # Calculate data transfer in bytes
+      self.info['redis_servers'][redis_server][self._uuid]['time_finished'] = time.time()
+      self.info['redis_servers'][redis_server][self._uuid]['time_elapsed'] = self.info['redis_servers'][redis_server][self._uuid]['time_finished'] - self.info['redis_servers'][redis_server][self._uuid]['time_start']
+      self.info['redis_servers'][redis_server][self._uuid]['bytes_per_second'] = int(self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded'] / self.info['redis_servers'][redis_server][self._uuid]['time_elapsed'])
+      if self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded'] != 0:
+        self.info['redis_servers'][redis_server][self._uuid]['compression_ratio'] = '%.3f' % (float(self.info['redis_servers'][redis_server][self._uuid]['bytes_results_decompressed']) / float(self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded']))
+
+      # Convert to megabytes so its somewhat more human readable.
+      self.info['redis_servers'][redis_server][self._uuid]['human_readable_mb_redis_cache_downloaded'] = '%.3f' % (self.info['redis_servers'][redis_server][self._uuid]['bytes_redis_cache_downloaded'] / 1048576.0)
+      self.info['redis_servers'][redis_server][self._uuid]['human_readable_mb_results_decompressed'] = '%.3f' % (self.info['redis_servers'][redis_server][self._uuid]['bytes_results_decompressed'] / 1048576.0)
+      self.info['redis_servers'][redis_server][self._uuid]['human_readable_mb_per_second' ] = '%.3f' % (self.info['redis_servers'][redis_server][self._uuid]['bytes_per_second'] / 1048576.0)
+
+      # Append the global query information
+      self.info['redis_servers'][redis_server][self._uuid]['query'] = self.info['query']
+      # Send to sysops-api
+      redis_connection.publish('sysops-api', json.dumps(self.info['redis_servers'][redis_server]))
+
 ###############################################################################################

@@ -1,8 +1,8 @@
 #!/usr/bin/python2.6
 # filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_utilities/extract_sysops_cache.py $
-# version       \$Revision: 102566 $
+# version       \$Revision: 122817 $
 # modifiedby    \$LastChangedBy: msvoboda $
-# lastmodified  \$Date: 2014-03-04 11:40:26 -0500 (Tue, 04 Mar 2014) $
+# lastmodified  \$Date: 2014-06-11 10:02:33 -0400 (Wed, 11 Jun 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ def build_valid_sites():
 
   """
   cf3.promises.eat1-22164-mps
-  cf3.promises.ech3-32570-mps
   cf3.promises.ela4-41005-mps
   """
   sites = {}
@@ -57,7 +56,37 @@ def build_valid_sites():
 
   return(uniq_sites)
 ###############################################################################################
+def print_help():
+  parser.print_help()
+  print '''
+
+Usage examples can be found at the following wiki page:
+https://iwww.corp.linkedin.com/wiki/cf/display/IST/Extracting+the+sysops+cache+for+fun+and+profit
+
+Basic examples:
+1. Display /etc/cm.conf for all machines attached the same MPS as the querying host (local scope)
+	extract_sysops_cache.py --search cm.conf --contents --prefix-hostnames
+
+2. Grab the output of netstat -anp from all machines at all datacenter (global scope) and see who has a network connection to lva1-salt01.prod
+	extract_sysops_cache.py --search netstat-anp --contents --prefix-hostnames --scope global | grep 10.132.40.56
+
+3. Get the md5sum of /etc/passwd from every machine in LVA1 (site scope)
+	extract_sysops_cache.py --search /etc/passwd --md5sum --prefix-hostnames --site lva1
+
+4. Get the os.stat() of /etc/sysctl.conf of the range cluster %cf3.promises.esv4-2360-mps in ESV4 (site scope)
+	extract_sysops_cache.py --search systctl.conf --stat --range-query %cf3.promises.esv4-2360-mps --site esv4
+
+If you aren't seeing results from machines you want, you probably are using the wrong scope.  By default this utility only returns results from
+a local scope.   Its likely you want to use --scope site to return results from all machines in your local executing datacenter, or better yet,
+--site <site> automatically adjusts the scope to site and can be used to query alternate datacenters. 
+(Query /etc/passwd from all hosts in LVA1 from a machine in ELA4)
+
+'''
+###############################################################################################
 def validate_cli_args():
+  if options.help:
+    print_help()
+
   if options.compare and options.search is None:
     print "To use the --compare function, we must find exactly one object with --search to compare against."
     sys.exit(1) 
@@ -75,6 +104,7 @@ def validate_cli_args():
     sys.exit(1)
 
   if options.list_files is None and options.info is None and options.search is None and options.compare_all is None:
+    print_help()
     print "No valid option passed.  Exiting"
     sys.exit(1)
 
@@ -163,12 +193,18 @@ if __name__ == '__main__':
   sites = build_valid_sites()
 
   parser = OptionParser(usage ="usage: %prog [options]",
-    version ="%prog 1.0") 
+    version = "%prog 1.0",
+    add_help_option = False)
   parser.add_option("--verbose",
     action = "store_true",
     dest = "verbose",
     default = False,
     help = "Enable verbose execution")
+  parser.add_option("--cost",
+    action = "store_true",
+    dest = "cost",
+    default = False,
+    help = "Display per MPS and total cost to pull data out of sysops-api for the given query")
   parser.add_option("--list-files",
     action = "store_true",
     dest = "list_files",
@@ -253,6 +289,10 @@ if __name__ == '__main__':
     action = "store_true",
     dest = "hostlist",
     help = "When using --compare-all, display the list of machines that matched the various keys being used to compare.")
+  parser.add_option("-h", "--help",
+    action = "store_true",
+    dest = "help",
+    help = "Show this help message and exit")
 
   (options,args) = parser.parse_args()
 
@@ -271,6 +311,7 @@ if __name__ == '__main__':
   if (options.search or options.info or options.list_files) and not options.compare and not options.compare_all:
     try:
       redisResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
+						cost = options.cost,
 						scope = options.scope,
 						site = options.site,
 						range_servers = options.range_servers,
@@ -290,7 +331,8 @@ if __name__ == '__main__':
       sys.exit(1)
   
     if not redisResults._gold and not options.info:
-      print "No objects were found with the above search query."
+      if not options.cost:
+        print "No objects were found with the above search query."
       sys.exit(1)
 
     # option 1.  This is --info
@@ -367,11 +409,13 @@ if __name__ == '__main__':
       sys.exit(1)
 
     if not redisResults._gold:
-      print "No objects were found with the above search query."
+      if not options.cost:
+        print "No objects were found with the above search query."
       sys.exit(1)
 
     try:
       compareResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
+						cost = options.cost,
 						scope = options.scope,
 						site = options.site,
 						range_servers = options.range_servers,
@@ -405,6 +449,7 @@ if __name__ == '__main__':
   if options.search and options.compare_all:
     try:
       redisResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
+						cost = options.cost,
 						scope = options.scope,
 						site = options.site,
 						range_servers = options.range_servers,
@@ -419,7 +464,8 @@ if __name__ == '__main__':
       sys.exit(1)
 
     if not redisResults._gold:
-      print "No objects were found with the above search query."
+      if not options.cost:
+        print "No objects were found with the above search query."
       sys.exit(1)
 
     hashpipe = {}
@@ -490,6 +536,7 @@ if __name__ == '__main__':
       print attention_whore.center(150)
       try:
         redisResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
+						cost = options.cost,
 						scope = options.scope,
 						site = options.site,
 						range_servers = options.range_servers,
@@ -515,6 +562,7 @@ if __name__ == '__main__':
         compare_key_hostlist = binger[compare_key][2]
         try:
           compareResults = CacheExtractor.CacheExtractor(verbose = options.verbose,
+						cost = options.cost,
 						scope = options.scope,
 						site = options.site,
 						range_servers = options.range_servers,

@@ -1,4 +1,8 @@
 #!/usr/bin/python2.6
+# filesource    \$HeadURL: svn+ssh://csvn@esv4-sysops-svn.corp.linkedin.com/export/content/sysops-svn/cfengine/trunk/generic_cf-agent_policies/config-general/manage_usr_local_admin/RedisFinder.py $
+# version       \$Revision: 122817 $
+# modifiedby    \$LastChangedBy: msvoboda $
+# lastmodified  \$Date: 2014-06-11 10:02:33 -0400 (Wed, 11 Jun 2014) $
 
 # (c) [2013] LinkedIn Corp. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
@@ -110,8 +114,8 @@ class RedisFinder():
     for line in self._cm_conf.readlines():
       if "MPS" in line:
         self._range_servers.append(line.split(':')[1].rstrip())
-        if self._verbose:
-          print "(+) RedisFinder.discover_range_servers() is being set to", self._range_servers
+    if self._verbose:
+      print "(+) RedisFinder.discover_range_servers() is being set to", self._range_servers
 
   def get_redis_corelist(self):
     return(self._redis_corelist)
