@@ -97,7 +97,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
       self._scope = 'site'
     else:
       self._site = self.discover_site()
-    
+
     if range_query:
       self._range_query = range_query
       # If the user specified a --site on the CLI, allow that option to be preserved.  global queries are expensive to search against.
@@ -222,7 +222,7 @@ class CacheExtractor(RedisFinder.RedisFinder):
       thread = threading.Thread(target=threaded_object_finder, args=(queue, redis_server))
       threads.append(thread)
       thread.start()
-      self._named_object_results[redis_server] = queue.get()  
+      self._named_object_results[redis_server] = queue.get()
       for named_object in self._named_object_results[redis_server]:
         self._number_of_results += 1
         if self._verbose:
@@ -243,7 +243,7 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
     # The actual key name will be in the form <hostname>#<filename>
     # This allows the operation to be atomic.  We can either search and find the object, or we can't.  Before, there was a race condition where we could be extracting
     # the key at the exact moment of insertion.  If we dont find a key with "#" in the name of the key, remove it from results.  We shouldn't be searching against
-    # objects that dont contain # in the keyname.  
+    # objects that dont contain # in the keyname.
     temp_results = {}
     for redis_server in self._redis_corelist:
       temp_results[redis_server] = []
@@ -251,10 +251,10 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
         if "#" in named_object:
           temp_results[redis_server].append(named_object)
         else:
-          if self._verbose: 
+          if self._verbose:
             print "(+) CacheExtractor.list_of_matching_named_objects() named_object " + named_object + " removed from redis server " + redis_server
       self._named_object_results[redis_server] = temp_results[redis_server]
-      
+
     machines = []
     if self._range_query:
       for range_server in self._range_servers:
@@ -269,7 +269,7 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
         except seco.range.RangeException:
           print "(+) CacheExtractor.list_of_matching_named_objects() range query invalid"
           sys.exit(1)
-    
+
     if self._file:
       try:
         if machines:
@@ -287,7 +287,7 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
       except Exception, e:
         print "The file " + self._file + " can not be opened.  Does it exist?  Exiting."
         sys.exit(1)
-        
+
 
     # Both range queries and reading from a file are both restrictive actions.  We only return objects if we match from either source.
     if self._range_query or self._file:
@@ -297,9 +297,9 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
         for named_object in self._named_object_results[redis_server]:
           for machine in machines:
             if machine.strip() in named_object:
-              temp_results[redis_server].append(named_object) 
+              temp_results[redis_server].append(named_object)
         self._named_object_results[redis_server] = temp_results[redis_server]
-    
+
 ###############################################################################################
   def extract_named_objects(self):
 
@@ -356,7 +356,7 @@ If executing extract_sysops_cache.py, use --help for some basic examples of scop
 
         # This lies outside the loop of named_objects.  The pipeline.execute() below will issue a single redis query to fetch everything at once.
         # By using pipelines instead of individual fetches, this reduces cross communcation between the client and server.  See here for more details.
-        # https://github.com/andymccurdy/redis-py 
+        # https://github.com/andymccurdy/redis-py
         self._object_store[redis_server] = redis_pipeline.execute()
       except redis.exceptions.ResponseError, e:
         print "CacheExtractor.threaded_object_extractor() Exception " + str(e)
