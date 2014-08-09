@@ -9,10 +9,10 @@
 import sys
 sys.path.append("/usr/local/admin")
 sys.path.append("/usr/local/linkedin/lib/python2.6/site-packages")
-import RedisFinder
+import sysopsapi.redis_finder
 import os
 import seco.range
-import CacheExtractor
+import sysopsapi.cache_extractor
 import time
 import shutil
 import signal
@@ -70,10 +70,10 @@ def main():
         if not os.path.exists(base_directory + datacenter):
             os.makedirs(base_directory + datacenter)
 
-        # Find the unique files for the datacenter.  Spawn a CacheExtractor
+        # Find the unique files for the datacenter.  Spawn a sysopsapi.cache_extractor
         # object for every key.  Dumping the entire datacenter in a single
         # object requires too much RAM.
-        uniqueFiles = CacheExtractor.CacheExtractor(
+        uniqueFiles = sysopsapi.cache_extractor.CacheExtractor(
             scope='site', site=datacenter.lower(), list_files=True)
 
         number_of_keys = len(uniqueFiles._gold.keys())
@@ -82,10 +82,10 @@ def main():
             keys_processed += 1
             start_file_time = time.time()
             filename = key.split("#")[1]
-            # Spawn a CacheExtractor object for every unique key, in every
+            # Spawn a sysopsapi.cache_extractor object for every unique key, in every
             # datacenter.
             try:
-                dataDump = CacheExtractor.CacheExtractor(
+                dataDump = sysopsapi.cache_extractor.CacheExtractor(
                     scope='site', site=datacenter.lower(), search_string=filename, contents=True)
             except Exception, e:
                 print "Lost filename " + filename + " The object has dropped out of the cache"

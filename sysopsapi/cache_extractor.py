@@ -20,7 +20,7 @@ import threading
 import Queue
 import platform
 sys.path.append("/usr/local/admin")
-import RedisFinder
+import sysopsapi.redis_finder
 import seco.range
 import bz2
 
@@ -31,7 +31,7 @@ import pwd
 import json
 
 
-class CacheExtractor(RedisFinder.RedisFinder):
+class CacheExtractor(sysopsapi.redis_finder.RedisFinder):
 
     def __init__(self,
                  scope=None,

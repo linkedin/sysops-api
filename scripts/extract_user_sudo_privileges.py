@@ -9,7 +9,7 @@
 from optparse import OptionParser
 import sys
 sys.path.append("/usr/local/admin")
-import CacheExtractor
+import sysopsapi.cache_extractor
 
 ##########################################################################
 
@@ -51,7 +51,7 @@ def main():
             if ina_group in ina_groups:
                 sudoers_rules[machine_group] = privs
 
-    cache_results = CacheExtractor.CacheExtractor(verbose=options.verbose,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                   scope='global',
                                                   contents=True,
                                                   range_query=options.range_query,

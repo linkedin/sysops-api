@@ -14,7 +14,7 @@ from optparse import OptionParser
 import sys
 import os
 sys.path.append("/usr/local/admin")
-import CacheExtractor
+import sysopsapi.cache_extractor
 import json
 import numpy as np
 import time
@@ -32,7 +32,7 @@ import bz2
 def validate_json_data(host_stats, site, local_disk, workdir):
     site = site[0]
     if not local_disk:
-        cache_results = CacheExtractor.CacheExtractor(
+        cache_results = sysopsapi.cache_extractor.CacheExtractor(
             contents=True, scope='site', search_string=site + '-host_stats.json')
         try:
             if cache_results:
@@ -179,7 +179,7 @@ def build_valid_netstat_keys(host_stats):
 
 def calculate_means_and_medians(datacenter, host_stats):
     start_time = time.time()
-    cache_results = CacheExtractor.CacheExtractor(contents=True,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(contents=True,
                                                   site=datacenter,
                                                   search_string='global_sysops_api_interaction_times.json')
     for key in cache_results._gold.iterkeys():
@@ -253,7 +253,7 @@ def calculate_means_and_medians(datacenter, host_stats):
 
 def find_active_interface_in_bond(datacenter, host_stats):
     start_time = time.time()
-    cache_results = CacheExtractor.CacheExtractor(contents=True,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(contents=True,
                                                   site=datacenter,
                                                   search_string="/proc/net/bonding/bond0")
     for key in cache_results._gold.iterkeys():
@@ -282,7 +282,7 @@ def find_active_interface_in_bond(datacenter, host_stats):
 
 def find_lldpd_data(datacenter, host_stats):
     start_time = time.time()
-    cache_results = CacheExtractor.CacheExtractor(contents=True,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(contents=True,
                                                   site=datacenter,
                                                   search_string='/etc/hardware_identification.json@lldp-xml')
     for key in cache_results._gold.iterkeys():
@@ -333,7 +333,7 @@ def is_number(s):
 
 def pull_netstat_summary(datacenter, host_stats):
     start_time = time.time()
-    cache_results = CacheExtractor.CacheExtractor(contents=True,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(contents=True,
                                                   site=datacenter,
                                                   search_string='/etc/hardware_identification.json@netstat-s')
     for key in cache_results._gold.iterkeys():

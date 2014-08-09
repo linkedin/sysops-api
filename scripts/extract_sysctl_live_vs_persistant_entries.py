@@ -9,7 +9,7 @@
 from optparse import OptionParser
 import sys
 sys.path.append("/usr/local/admin")
-import CacheExtractor
+import sysopsapi.cache_extractor
 import re
 
 ##########################################################################
@@ -35,7 +35,7 @@ def main():
     else:
         myscope = 'global'
 
-    persistant_results = CacheExtractor.CacheExtractor(verbose=options.verbose,
+    persistant_results = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                        scope=myscope,
                                                        contents=True,
                                                        site=options.site,
@@ -53,7 +53,7 @@ def main():
 
         while True:
             try:
-                live_results = CacheExtractor.CacheExtractor(verbose=options.verbose,
+                live_results = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                              scope=myscope,
                                                              contents=True,
                                                              site=options.site,

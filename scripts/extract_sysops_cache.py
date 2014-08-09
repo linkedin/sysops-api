@@ -13,7 +13,7 @@
 from optparse import OptionParser
 import sys
 sys.path.append("/usr/local/admin")
-import CacheExtractor
+import sysopsapi.cache_extractor
 import difflib
 import re
 import hashlib
@@ -322,7 +322,7 @@ if __name__ == '__main__':
 ##########################################################################
     if (options.search or options.info or options.list_files) and not options.compare and not options.compare_all:
         try:
-            redisResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+            redisResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                          cost=options.cost,
                                                          scope=options.scope,
                                                          site=options.site,
@@ -402,7 +402,7 @@ if __name__ == '__main__':
         # Since we are directly modifying the object, we re-declare it here
         # under this option so the intention is clear.
         try:
-            redisResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+            redisResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                          scope=options.scope,
                                                          site=options.site,
                                                          range_servers=options.range_servers,
@@ -432,7 +432,7 @@ if __name__ == '__main__':
             sys.exit(1)
 
         try:
-            compareResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+            compareResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                            cost=options.cost,
                                                            scope=options.scope,
                                                            site=options.site,
@@ -468,7 +468,7 @@ if __name__ == '__main__':
     # option 10, This is --compare-all
     if options.search and options.compare_all:
         try:
-            redisResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+            redisResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                          cost=options.cost,
                                                          scope=options.scope,
                                                          site=options.site,
@@ -525,7 +525,7 @@ if __name__ == '__main__':
         if not options.contents and not options.stat and not options.md5sum and not options.wordcount and not options.time:
             options.contents = True
 
-        # binger is now a dictionary with each item being a key of a unique md5sum.  perform a CacheExtractor search and compare with its friends.
+        # binger is now a dictionary with each item being a key of a unique md5sum.  perform a sysopsapi.cache_extractor search and compare with its friends.
         # once we reach 1 item, it doesn't make sense to compare it against itself, so bail.
         # If we start off with only 1 item, then everything is identical.
         if len(binger) == 1:
@@ -564,7 +564,7 @@ if __name__ == '__main__':
             print "Starting comparison of  object " + first_key
             print attention_whore.center(150)
             try:
-                redisResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+                redisResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                              cost=options.cost,
                                                              scope=options.scope,
                                                              site=options.site,
@@ -591,7 +591,7 @@ if __name__ == '__main__':
                 compare_key_md5sum = binger[compare_key][1]
                 compare_key_hostlist = binger[compare_key][2]
                 try:
-                    compareResults = CacheExtractor.CacheExtractor(verbose=options.verbose,
+                    compareResults = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                                    cost=options.cost,
                                                                    scope=options.scope,
                                                                    site=options.site,

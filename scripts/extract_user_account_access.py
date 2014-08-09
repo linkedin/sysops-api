@@ -9,7 +9,7 @@
 from optparse import OptionParser
 import sys
 sys.path.append("/usr/local/admin")
-import CacheExtractor
+import sysopsapi.cache_extractor
 
 ##########################################################################
 
@@ -33,7 +33,7 @@ def main():
 
     (options, args) = parser.parse_args()
 
-    cache_results = CacheExtractor.CacheExtractor(verbose=options.verbose,
+    cache_results = sysopsapi.cache_extractor.CacheExtractor(verbose=options.verbose,
                                                   scope='global',
                                                   contents=True,
                                                   range_query=options.range_query,
