@@ -24,341 +24,406 @@ import uuid
 import time
 import platform
 
-#################################################################################################################
+##########################################################################
+
+
 class timeout_exception(Exception):
-  pass
-#################################################################################################################
+    pass
+##########################################################################
+
+
 def timeout_handler(signum, frame):
     raise timeout_exception()
-#################################################################################################################
+##########################################################################
+
+
 def prune_array_data(prune):
-  # Only keep results from the past 50 transfers
-  if len(prune["measured"]) >= 50:
-    all_collections = sorted(prune["measured"].keys())  
-    del prune["measured"][all_collections[0]]
-#################################################################################################################
+    # Only keep results from the past 50 transfers
+    if len(prune["measured"]) >= 50:
+        all_collections = sorted(prune["measured"].keys())
+        del prune["measured"][all_collections[0]]
+##########################################################################
+
+
 def generate_global_redis_server_execution_cost():
 
-  import time
+    import time
 
-  # the size of the total contents of the cache.
-  redis_time_data["global_total"]["total_cache_size"] = 0
-  for redis_server in redis_time_data['per_mps']['mps_cache_bytes'].iterkeys():
-    redis_time_data["global_total"]["total_cache_size"] += redis_time_data['per_mps']['mps_cache_bytes'][redis_server]
+    # the size of the total contents of the cache.
+    redis_time_data["global_total"]["total_cache_size"] = 0
+    for redis_server in redis_time_data['per_mps']['mps_cache_bytes'].iterkeys():
+        redis_time_data["global_total"][
+            "total_cache_size"] += redis_time_data['per_mps']['mps_cache_bytes'][redis_server]
 
-  # Calculate how much time it took to interact with all MPS.
-  redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = float(time.time() - global_start_time)
+    # Calculate how much time it took to interact with all MPS.
+    redis_time_data["global_total"]["total_redis_interaction_time"][
+        "measured"][global_start_time] = float(time.time() - global_start_time)
 
-  # Calculate how many bytes per second were sent over the wire from all of the MPS tranfers
-  redis_time_data["global_total"]["total_redis_transfer_speed"]["measured"][global_start_time] = 0
-  redis_time_data["global_total"]["total_redis_transfer_speed"]["measured"][global_start_time] = float(redis_time_data["global_total"]["total_cache_size"] / redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time])
+    # Calculate how many bytes per second were sent over the wire from all of
+    # the MPS tranfers
+    redis_time_data["global_total"]["total_redis_transfer_speed"][
+        "measured"][global_start_time] = 0
+    redis_time_data["global_total"]["total_redis_transfer_speed"]["measured"][global_start_time] = float(
+        redis_time_data["global_total"]["total_cache_size"] / redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time])
 
-  # Start ImportError.  If we can't import numpy (Solaris), then we can generate useful statistics
-  try:
-    import numpy as np
-    for calculation in ['total_redis_interaction_time', 'total_redis_transfer_speed']:
-      interactions = []
-      for interaction,time in redis_time_data["global_total"][calculation]["measured"].iteritems():
-        interactions.append(float(time))
-      redis_time_data['global_total'][calculation]['mean'] = np.mean(interactions)
-      redis_time_data['global_total'][calculation]['median'] =  np.median(interactions)
-      redis_time_data['global_total'][calculation]['std'] =  np.std(interactions)
-      redis_time_data['global_total'][calculation]['var'] =  np.var(interactions)
-      redis_time_data['global_total'][calculation]['min'] =  np.min(interactions)
-      redis_time_data['global_total'][calculation]['max'] =  np.max(interactions)
-
-    
-    for calculation in ['per_redis_server_interaction_time', 'per_redis_server_transfer_speed']:
-      for redis_server in redis_time_data['per_mps'][calculation].iterkeys():
-        interactions = []
-        for interaction,time in redis_time_data['per_mps'][calculation][redis_server]["measured"].iteritems():
-          interactions.append(float(time))
-        redis_time_data['per_mps'][calculation][redis_server]['mean'] = np.mean(interactions)
-        redis_time_data['per_mps'][calculation][redis_server]['median'] = np.median(interactions)
-        redis_time_data['per_mps'][calculation][redis_server]['std'] = np.std(interactions)
-        redis_time_data['per_mps'][calculation][redis_server]['var'] = np.var(interactions)
-        redis_time_data['per_mps'][calculation][redis_server]['min'] = np.min(interactions)
-        redis_time_data['per_mps'][calculation][redis_server]['max'] = np.max(interactions)
-
-  except ImportError:
-    pass
-
-  # Dump data to disk.
-  try:
-    with open(global_sysops_api_interaction_times, mode = "w") as fh:
-      json.dump(redis_time_data, fh, sort_keys=True, indent=5)
-  except Exception, e:
-    print "We tried to dump to JSON, but couldnt.  Sorry." + str(e)
-
-
-#################################################################################################################
-def interact_with_redis_server(key, file_data, timeout_alarm):
-  key_cache_bytes = 0
-  old_handler = signal.signal(signal.SIGALRM, timeout_handler) 
-  signal.alarm(timeout_alarm) 
-  return_code = 0
-  key_cache_md5sum = 0
-
-  # Begin timeout exception
-  try:
-    # Begin Redis exception
+    # Start ImportError.  If we can't import numpy (Solaris), then we can
+    # generate useful statistics
     try:
-      # fetch the current md5sum in the cache and see if we have the same md5sum..
-      # the md5sum lives at index[1].
-      data = redis_connection.lindex(key, 1)
-      if data:
-        key_cache_md5sum = bz2.decompress(data)
-      if key_cache_md5sum == file_data[1]:
-        # Since the md5sum matches, the contents of the key hasn't updated.  Simply reset the TTL and exit this routine.
-        redis_connection.expire(key, ttl)
-        return (return_code, key_cache_bytes)
-      else:
-        tempkey = hostname + "$" + str(uuid.uuid4())
-        redis_pipeline.expire(tempkey,ttl)
-        for object in file_data:
-          compressed_object = bz2.compress(object)
-          redis_pipeline.rpush(tempkey,compressed_object)
-          key_cache_bytes += sys.getsizeof(compressed_object)
-        redis_pipeline.rename(tempkey, key)
-        redis_pipeline.expire(key,ttl)
-        redis_pipeline.execute()
-    except redis.exceptions.ConnectionError, e:
-      print "=connection_error_redis_server=" + redis_server
-      print "+redis_server_connection_failure"
-      return_code = 1
-      return (1, key_cache_bytes)
-  except timeout_exception:
-    print "=timeout_exception_redis_server=" + redis_server
-    print "+redis_server_timeout_exception"
-    return_code = 1
-  finally:
-    signal.signal(signal.SIGALRM, old_handler)
-    signal.alarm(0)
+        import numpy as np
+        for calculation in ['total_redis_interaction_time', 'total_redis_transfer_speed']:
+            interactions = []
+            for interaction, time in redis_time_data["global_total"][calculation]["measured"].iteritems():
+                interactions.append(float(time))
+            redis_time_data['global_total'][calculation][
+                'mean'] = np.mean(interactions)
+            redis_time_data['global_total'][calculation][
+                'median'] = np.median(interactions)
+            redis_time_data['global_total'][calculation][
+                'std'] = np.std(interactions)
+            redis_time_data['global_total'][calculation][
+                'var'] = np.var(interactions)
+            redis_time_data['global_total'][calculation][
+                'min'] = np.min(interactions)
+            redis_time_data['global_total'][calculation][
+                'max'] = np.max(interactions)
 
-  return (return_code, key_cache_bytes)
-#################################################################################################################
-def produce_file_md5sum(data):
-  d = hashlib.md5()
-  d.update(data)
-  return d.hexdigest()
-#################################################################################################################
-def produce_wc(data):
-  num_of_chars = len(data) 
-  num_of_lines = data.count('\n') + 1
-  wordlist = data.split(None)
-  num_of_words = len(wordlist)
-  wc_tuple = "Number of characters: " + str(num_of_chars), "Number of lines: " + str(num_of_lines), "Number of words: " + str(num_of_words)
-  return wc_tuple
-#################################################################################################################
-if __name__ == '__main__':
-  """
-  centralized servers to query the contents of the various configurations that are listed in /var/cfengine/outgoing.
-  This cache replaces the rsync processes which doesnt scale.
-  """
-  parser = OptionParser(usage ="usage: %prog [options]",
-    version ="%prog 1.0") 
-  parser.add_option("-v", "--verbose",
-    action = "store_true",
-    dest = "verbose",
-    default = False,
-    help = "Enable verbose execution")
-  parser.add_option("-p", "--primary-mps",
-    action = "store",
-    dest = "primary_mps",
-    help = "The primary Cfengine master policy server for the client.")
-  parser.add_option("-s", "--secondary-mps",
-    action = "store",
-    dest = "secondary_mps",
-    help = "The secondary Cfengine master policy server for the client")
-  parser.add_option("-t", "--third-mps",
-    action = "store",
-    dest = "third_mps",
-    help = "The third Cfengine master policy server for the client.")
-  parser.add_option("-f", "--forth-mps",
-    action = "store",
-    dest = "forth_mps",
-    help = "The forth Cfengine master policy server for the client.")
-  parser.add_option("-l", "--time-to-live",
-    action = "store",
-    dest = "ttl",
-    help = "The time for objects to live in the cache.  By default, this is set to one hour.")
+        for calculation in ['per_redis_server_interaction_time', 'per_redis_server_transfer_speed']:
+            for redis_server in redis_time_data['per_mps'][calculation].iterkeys():
+                interactions = []
+                for interaction, time in redis_time_data['per_mps'][calculation][redis_server]["measured"].iteritems():
+                    interactions.append(float(time))
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['mean'] = np.mean(interactions)
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['median'] = np.median(interactions)
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['std'] = np.std(interactions)
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['var'] = np.var(interactions)
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['min'] = np.min(interactions)
+                redis_time_data['per_mps'][calculation][
+                    redis_server]['max'] = np.max(interactions)
 
-  (options,args) = parser.parse_args()
+    except ImportError:
+        pass
 
-  if os.geteuid() != 0:
-    print "You must be root to run this script.  This program executes several commands which require root privledges."
-    sys.exit(1)
+    # Dump data to disk.
+    try:
+        with open(global_sysops_api_interaction_times, mode="w") as fh:
+            json.dump(redis_time_data, fh, sort_keys=True, indent=5)
+    except Exception, e:
+        print "We tried to dump to JSON, but couldnt.  Sorry." + str(e)
 
-  if not options.primary_mps or not options.secondary_mps or not options.third_mps or not options.forth_mps:
-    print "All for MPS options must be supplied in order to populate the cache.  Our architecture assumes data is replicated to all 4 MPS via this script."
-    print "Even in small sites where two MPS are serving clients, we construct a python dictionary to perform the uniq for us so only two physcial machines"
-    print "have data populated.  All four logical MPS must be filled.   Really, Cfengine automation should be the only user of this script."
-    sys.exit(1)
 
-  if options.ttl is None:
-    ttl = 21600
-  else:
-    ttl = options.ttl
+##########################################################################
+def interact_with_redis_server(key, file_data, timeout_alarm):
+    key_cache_bytes = 0
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout_alarm)
+    return_code = 0
+    key_cache_md5sum = 0
 
-  if "linkedin.com" not in platform.node():
-    hostname = platform.node() + ".linkedin.com"
-  else:
-    hostname = platform.node()
-
-  redis_servers_response_codes = {}
-  json_data_directory = "/etc/cfe.d/"
-
-  list_of_files_command = "find /var/cfengine/outgoing -type l -ls | awk '{print $13}'"
-  if options.verbose:
-    print "(+) list of files command is " + list_of_files_command
-  list_of_files,errors = subprocess.Popen(list_of_files_command,shell=True,stdout=subprocess.PIPE).communicate()
-
-  # Even though we can provide up to 4x redis servers on the CLI, in most cases, they will be duplicated.  Our Cfengine architecture allows for up
-  # to 4x MPS per core, but we could be in a small site with a single MPS.  In any case, build a dictionary object which does the "uniques" for us.
-  # We use the key to find uniques.  We use the value to determine if that unique redis server is responsive or not.  If its unresponsive, we dont query it.
-  redis_servers_response_codes[options.primary_mps] = 0
-  redis_servers_response_codes[options.secondary_mps] = 0
-  redis_servers_response_codes[options.third_mps] = 0
-  redis_servers_response_codes[options.forth_mps] = 0
-  
-  redis_time_data = {}
-  global_start_time = time.time()
-  total_cache_bytes = 0
-
-  global_sysops_api_interaction_times = json_data_directory + "global_sysops_api_interaction_times.json"
-  try:
-    input_text = open(global_sysops_api_interaction_times).read()
-    redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
-    redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
-  except Exception, e:
-    print "Sorry, couldnt read from the filesystem.  Creating a new object." + str(e)
-    redis_time_data['global_total'] = {}
-    redis_time_data['per_mps'] = {}
-
-  try:
-    if not redis_time_data['global_total'].get('total_redis_interaction_time'):
-      redis_time_data['global_total']['total_redis_interaction_time'] = {}
-      redis_time_data['global_total']['total_redis_interaction_time']['measured'] = {}
-    if not redis_time_data['global_total'].get('total_redis_transfer_speed'):
-      redis_time_data['global_total']['total_redis_transfer_speed'] = {}
-      redis_time_data['global_total']['total_redis_transfer_speed']['measured'] = {}
-  except KeyError:
-    os.remove(global_sysops_api_interaction_times)
-    sys.exit(1)
-     
-
-  if not redis_time_data['per_mps'].get('per_redis_server_interaction_time'):
-    redis_time_data['per_mps']['per_redis_server_interaction_time'] = {}
-  if not redis_time_data['per_mps'].get('per_redis_server_transfer_speed'):
-    redis_time_data['per_mps']['per_redis_server_transfer_speed'] = {}
-  if not redis_time_data['per_mps'].get('mps_cache_bytes'):
-    redis_time_data['per_mps']['mps_cache_bytes'] = {}
-  
-  # Only prune the total dicts at this level.  they have measured.  the per dicts are pruned below once we iterate through redis_server
-  prune_array_data(redis_time_data['global_total']['total_redis_interaction_time'])
-  prune_array_data(redis_time_data['global_total']['total_redis_transfer_speed'])
-
-  for redis_server in redis_servers_response_codes.iterkeys():
-    redis_time_data['per_mps']['mps_cache_bytes'][redis_server] = 0
-    redis_server_cache_bytes = 0
-    redis_server_start_time = time.time()
-
-    if not redis_time_data['per_mps']['per_redis_server_interaction_time'].get(redis_server):
-      redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server] = {}
-      redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]['measured'] = {}
-    if not redis_time_data['per_mps']['per_redis_server_transfer_speed'].get(redis_server):
-      redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server] = {}
-      redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]['measured'] = {}
-
-    prune_array_data(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server])
-    prune_array_data(redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server])
-    redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = {}
-    redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time] = {}
-
-    redis_connection = redis.Redis(host=redis_server,port=6379,db=1,socket_timeout=5,charset='utf-8', errors='strict')
-    redis_pipeline = redis_connection.pipeline()
-
-    if options.verbose:
-      print "(+) redis_server is " + redis_server
-      print "(+) cache TTL is " + str(ttl)
-
-    for file in list_of_files.splitlines():
-      timeout_alarm = 5
-      if os.path.isfile(file):
-        file_data = []
-        if "/etc/hardware_identification" in file:
-          hardware_identification_data = open(file, 'r').read()
-          hardware_identification  = json.loads(hardware_identification_data.decode('utf-8','ignore'))
-          for hi_key in hardware_identification.iterkeys():
-            key_cache_bytes = 0
-            key_start_time = time.time()
-            file_data = []
-            file = "/etc/hardware_identification.json" + "@" + hi_key
-            key = hostname + "#" + file
-            store_key = key.split("#")[1]
-            file_data.append(str(hardware_identification[hi_key]))
-            file_data.append(str(produce_file_md5sum(hardware_identification[hi_key])))
-            file_data.append(str("No os.stat() is available.  hardware_identification is comprised of executed commands."))
-            file_data.append(str(produce_wc(hardware_identification[hi_key])))
-            file_data.append(str(time.time()))
-            # Push the obect into the cache.
-            if not redis_servers_response_codes[redis_server]: 
-              (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
-              redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
-              if options.verbose:
-                print key
-                print "\t" + str(time.time() - key_start_time) + " seconds"
-                print "\t" + str(key_cache_bytes) + " bytes"
-                print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
-                print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
-        else:
-          key_cache_bytes = 0
-          key_start_time = time.time()
-          key = hostname + "#" + file
-          store_key = key.split("#")[1]
-          data = open(file,'rb').read()
-          file_data.append(str(data))
-          file_data.append(str(produce_file_md5sum(data)))
-          file_data.append(str(os.stat(file)))
-          file_data.append(str(produce_wc(data)))
-          file_data.append(str(time.time()))
-          # Make sure we aren't pushing objects larger than 10mb into RAM on the MPS.
-          filesize = os.stat(file).st_size
-          if filesize > 10485760:
-            if "extract_network_health" not in key:
-              file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(filesize / 1048576) + " megabytes"
-              key = hostname + "#" + file + "@" + "file_size_exceeded"
+    # Begin timeout exception
+    try:
+        # Begin Redis exception
+        try:
+            # fetch the current md5sum in the cache and see if we have the same md5sum..
+            # the md5sum lives at index[1].
+            data = redis_connection.lindex(key, 1)
+            if data:
+                key_cache_md5sum = bz2.decompress(data)
+            if key_cache_md5sum == file_data[1]:
+                # Since the md5sum matches, the contents of the key hasn't
+                # updated.  Simply reset the TTL and exit this routine.
+                redis_connection.expire(key, ttl)
+                return (return_code, key_cache_bytes)
             else:
-              timeout_alarm = 15
-          # Push the obect into the cache.
-          if not redis_servers_response_codes[redis_server]: 
-            (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(key, file_data, timeout_alarm)
-            redis_time_data['per_mps']['mps_cache_bytes'][redis_server] += key_cache_bytes
-            if options.verbose:
-              print key
-              print "\t" + str(time.time() - key_start_time) + " seconds"
-              print "\t" + str(key_cache_bytes) + " bytes"
-              print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
-              print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
+                tempkey = hostname + "$" + str(uuid.uuid4())
+                redis_pipeline.expire(tempkey, ttl)
+                for object in file_data:
+                    compressed_object = bz2.compress(object)
+                    redis_pipeline.rpush(tempkey, compressed_object)
+                    key_cache_bytes += sys.getsizeof(compressed_object)
+                redis_pipeline.rename(tempkey, key)
+                redis_pipeline.expire(key, ttl)
+                redis_pipeline.execute()
+        except redis.exceptions.ConnectionError, e:
+            print "=connection_error_redis_server=" + redis_server
+            print "+redis_server_connection_failure"
+            return_code = 1
+            return (1, key_cache_bytes)
+    except timeout_exception:
+        print "=timeout_exception_redis_server=" + redis_server
+        print "+redis_server_timeout_exception"
+        return_code = 1
+    finally:
+        signal.signal(signal.SIGALRM, old_handler)
+        signal.alarm(0)
 
-    # Calculate how much time it took to interact with each MPS.
-    redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time] = time.time() - redis_server_start_time
+    return (return_code, key_cache_bytes)
+##########################################################################
 
-    # Calculate the bits per second that we pushed to the MPS.
-    redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time] = float(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) / float(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time])
+
+def produce_file_md5sum(data):
+    d = hashlib.md5()
+    d.update(data)
+    return d.hexdigest()
+##########################################################################
+
+
+def produce_wc(data):
+    num_of_chars = len(data)
+    num_of_lines = data.count('\n') + 1
+    wordlist = data.split(None)
+    num_of_words = len(wordlist)
+    wc_tuple = "Number of characters: " + \
+        str(num_of_chars), "Number of lines: " + \
+        str(num_of_lines), "Number of words: " + str(num_of_words)
+    return wc_tuple
+##########################################################################
+if __name__ == '__main__':
+    """
+    centralized servers to query the contents of the various configurations that are listed in /var/cfengine/outgoing.
+    This cache replaces the rsync processes which doesnt scale.
+    """
+    parser = OptionParser(usage="usage: %prog [options]",
+                          version="%prog 1.0")
+    parser.add_option("-v", "--verbose",
+                      action="store_true",
+                      dest="verbose",
+                      default=False,
+                      help="Enable verbose execution")
+    parser.add_option("-p", "--primary-mps",
+                      action="store",
+                      dest="primary_mps",
+                      help="The primary Cfengine master policy server for the client.")
+    parser.add_option("-s", "--secondary-mps",
+                      action="store",
+                      dest="secondary_mps",
+                      help="The secondary Cfengine master policy server for the client")
+    parser.add_option("-t", "--third-mps",
+                      action="store",
+                      dest="third_mps",
+                      help="The third Cfengine master policy server for the client.")
+    parser.add_option("-f", "--forth-mps",
+                      action="store",
+                      dest="forth_mps",
+                      help="The forth Cfengine master policy server for the client.")
+    parser.add_option("-l", "--time-to-live",
+                      action="store",
+                      dest="ttl",
+                      help="The time for objects to live in the cache.  By default, this is set to one hour.")
+
+    (options, args) = parser.parse_args()
+
+    if os.geteuid() != 0:
+        print "You must be root to run this script.  This program executes several commands which require root privledges."
+        sys.exit(1)
+
+    if not options.primary_mps or not options.secondary_mps or not options.third_mps or not options.forth_mps:
+        print "All for MPS options must be supplied in order to populate the cache.  Our architecture assumes data is replicated to all 4 MPS via this script."
+        print "Even in small sites where two MPS are serving clients, we construct a python dictionary to perform the uniq for us so only two physcial machines"
+        print "have data populated.  All four logical MPS must be filled.   Really, Cfengine automation should be the only user of this script."
+        sys.exit(1)
+
+    if options.ttl is None:
+        ttl = 21600
+    else:
+        ttl = options.ttl
+
+    if "linkedin.com" not in platform.node():
+        hostname = platform.node() + ".linkedin.com"
+    else:
+        hostname = platform.node()
+
+    redis_servers_response_codes = {}
+    json_data_directory = "/etc/cfe.d/"
+
+    list_of_files_command = "find /var/cfengine/outgoing -type l -ls | awk '{print $13}'"
     if options.verbose:
-      print "(+) Redis server " + redis_server + "  completed in " + str(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time]) + " seconds at a transfer rate of " + str(redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time]) + " bytes per second"
+        print "(+) list of files command is " + list_of_files_command
+    list_of_files, errors = subprocess.Popen(
+        list_of_files_command, shell=True, stdout=subprocess.PIPE).communicate()
 
-  # Calculate how much time it took to interact with all MPS.
-  redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time] = time.time() - global_start_time
- 
-  start_calculation_time = time.time()
-  generate_global_redis_server_execution_cost()
-  if options.verbose:
-    print "(+) Calculated global statistics in " + str(time.time() - start_calculation_time) + " seconds"
-    print "(+) Execution completed in " + str(redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time]) + " seconds"
+    # Even though we can provide up to 4x redis servers on the CLI, in most cases, they will be duplicated.  Our Cfengine architecture allows for up
+    # to 4x MPS per core, but we could be in a small site with a single MPS.  In any case, build a dictionary object which does the "uniques" for us.
+    # We use the key to find uniques.  We use the value to determine if that
+    # unique redis server is responsive or not.  If its unresponsive, we dont
+    # query it.
+    redis_servers_response_codes[options.primary_mps] = 0
+    redis_servers_response_codes[options.secondary_mps] = 0
+    redis_servers_response_codes[options.third_mps] = 0
+    redis_servers_response_codes[options.forth_mps] = 0
 
-  for redis_server in redis_servers_response_codes.iterkeys():
-    if not redis_servers_response_codes[redis_server]:
-      print "+successful_redis_server_connection"
-      print "=successful_redis_server=" + redis_server
+    redis_time_data = {}
+    global_start_time = time.time()
+    total_cache_bytes = 0
+
+    global_sysops_api_interaction_times = json_data_directory + \
+        "global_sysops_api_interaction_times.json"
+    try:
+        input_text = open(global_sysops_api_interaction_times).read()
+        redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
+        redis_time_data = json.loads(input_text.decode('utf-8', 'ignore'))
+    except Exception, e:
+        print "Sorry, couldnt read from the filesystem.  Creating a new object." + str(e)
+        redis_time_data['global_total'] = {}
+        redis_time_data['per_mps'] = {}
+
+    try:
+        if not redis_time_data['global_total'].get('total_redis_interaction_time'):
+            redis_time_data['global_total'][
+                'total_redis_interaction_time'] = {}
+            redis_time_data['global_total'][
+                'total_redis_interaction_time']['measured'] = {}
+        if not redis_time_data['global_total'].get('total_redis_transfer_speed'):
+            redis_time_data['global_total']['total_redis_transfer_speed'] = {}
+            redis_time_data['global_total'][
+                'total_redis_transfer_speed']['measured'] = {}
+    except KeyError:
+        os.remove(global_sysops_api_interaction_times)
+        sys.exit(1)
+
+    if not redis_time_data['per_mps'].get('per_redis_server_interaction_time'):
+        redis_time_data['per_mps']['per_redis_server_interaction_time'] = {}
+    if not redis_time_data['per_mps'].get('per_redis_server_transfer_speed'):
+        redis_time_data['per_mps']['per_redis_server_transfer_speed'] = {}
+    if not redis_time_data['per_mps'].get('mps_cache_bytes'):
+        redis_time_data['per_mps']['mps_cache_bytes'] = {}
+
+    # Only prune the total dicts at this level.  they have measured.  the per
+    # dicts are pruned below once we iterate through redis_server
+    prune_array_data(
+        redis_time_data['global_total']['total_redis_interaction_time'])
+    prune_array_data(
+        redis_time_data['global_total']['total_redis_transfer_speed'])
+
+    for redis_server in redis_servers_response_codes.iterkeys():
+        redis_time_data['per_mps']['mps_cache_bytes'][redis_server] = 0
+        redis_server_cache_bytes = 0
+        redis_server_start_time = time.time()
+
+        if not redis_time_data['per_mps']['per_redis_server_interaction_time'].get(redis_server):
+            redis_time_data['per_mps'][
+                'per_redis_server_interaction_time'][redis_server] = {}
+            redis_time_data['per_mps']['per_redis_server_interaction_time'][
+                redis_server]['measured'] = {}
+        if not redis_time_data['per_mps']['per_redis_server_transfer_speed'].get(redis_server):
+            redis_time_data['per_mps'][
+                'per_redis_server_transfer_speed'][redis_server] = {}
+            redis_time_data['per_mps']['per_redis_server_transfer_speed'][
+                redis_server]['measured'] = {}
+
+        prune_array_data(
+            redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server])
+        prune_array_data(
+            redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server])
+        redis_time_data['per_mps']['per_redis_server_interaction_time'][
+            redis_server]["measured"][global_start_time] = {}
+        redis_time_data['per_mps']['per_redis_server_transfer_speed'][
+            redis_server]["measured"][global_start_time] = {}
+
+        redis_connection = redis.Redis(
+            host=redis_server, port=6379, db=1, socket_timeout=5, charset='utf-8', errors='strict')
+        redis_pipeline = redis_connection.pipeline()
+
+        if options.verbose:
+            print "(+) redis_server is " + redis_server
+            print "(+) cache TTL is " + str(ttl)
+
+        for file in list_of_files.splitlines():
+            timeout_alarm = 5
+            if os.path.isfile(file):
+                file_data = []
+                if "/etc/hardware_identification" in file:
+                    hardware_identification_data = open(file, 'r').read()
+                    hardware_identification = json.loads(
+                        hardware_identification_data.decode('utf-8', 'ignore'))
+                    for hi_key in hardware_identification.iterkeys():
+                        key_cache_bytes = 0
+                        key_start_time = time.time()
+                        file_data = []
+                        file = "/etc/hardware_identification.json" + \
+                            "@" + hi_key
+                        key = hostname + "#" + file
+                        store_key = key.split("#")[1]
+                        file_data.append(str(hardware_identification[hi_key]))
+                        file_data.append(
+                            str(produce_file_md5sum(hardware_identification[hi_key])))
+                        file_data.append(str(
+                            "No os.stat() is available.  hardware_identification is comprised of executed commands."))
+                        file_data.append(
+                            str(produce_wc(hardware_identification[hi_key])))
+                        file_data.append(str(time.time()))
+                        # Push the obect into the cache.
+                        if not redis_servers_response_codes[redis_server]:
+                            (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(
+                                key, file_data, timeout_alarm)
+                            redis_time_data['per_mps']['mps_cache_bytes'][
+                                redis_server] += key_cache_bytes
+                            if options.verbose:
+                                print key
+                                print "\t" + str(time.time() - key_start_time) + " seconds"
+                                print "\t" + str(key_cache_bytes) + " bytes"
+                                print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
+                                print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
+                else:
+                    key_cache_bytes = 0
+                    key_start_time = time.time()
+                    key = hostname + "#" + file
+                    store_key = key.split("#")[1]
+                    data = open(file, 'rb').read()
+                    file_data.append(str(data))
+                    file_data.append(str(produce_file_md5sum(data)))
+                    file_data.append(str(os.stat(file)))
+                    file_data.append(str(produce_wc(data)))
+                    file_data.append(str(time.time()))
+                    # Make sure we aren't pushing objects larger than 10mb into
+                    # RAM on the MPS.
+                    filesize = os.stat(file).st_size
+                    if filesize > 10485760:
+                        if "extract_network_health" not in key:
+                            file_data[0] = "The file " + file + " exceeded 10mb in size. Not pushing this into Redis. Size was " + str(
+                                filesize / 1048576) + " megabytes"
+                            key = hostname + "#" + file + \
+                                "@" + "file_size_exceeded"
+                        else:
+                            timeout_alarm = 15
+                    # Push the obect into the cache.
+                    if not redis_servers_response_codes[redis_server]:
+                        (redis_servers_response_codes[redis_server], key_cache_bytes) = interact_with_redis_server(
+                            key, file_data, timeout_alarm)
+                        redis_time_data['per_mps']['mps_cache_bytes'][
+                            redis_server] += key_cache_bytes
+                        if options.verbose:
+                            print key
+                            print "\t" + str(time.time() - key_start_time) + " seconds"
+                            print "\t" + str(key_cache_bytes) + " bytes"
+                            print "\t" + str(key_cache_bytes / float(time.time() - key_start_time)) + " bytes/s"
+                            print "\t" + redis_server + " " + str(redis_time_data['per_mps']['mps_cache_bytes'][redis_server]) + " mps summed cache bytes\n"
+
+        # Calculate how much time it took to interact with each MPS.
+        redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server][
+            "measured"][global_start_time] = time.time() - redis_server_start_time
+
+        # Calculate the bits per second that we pushed to the MPS.
+        redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time] = float(redis_time_data['per_mps'][
+                                                                                                                           'mps_cache_bytes'][redis_server]) / float(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time])
+        if options.verbose:
+            print "(+) Redis server " + redis_server + "  completed in " + str(redis_time_data['per_mps']['per_redis_server_interaction_time'][redis_server]["measured"][global_start_time]) + " seconds at a transfer rate of " + str(redis_time_data['per_mps']['per_redis_server_transfer_speed'][redis_server]["measured"][global_start_time]) + " bytes per second"
+
+    # Calculate how much time it took to interact with all MPS.
+    redis_time_data["global_total"]["total_redis_interaction_time"][
+        "measured"][global_start_time] = time.time() - global_start_time
+
+    start_calculation_time = time.time()
+    generate_global_redis_server_execution_cost()
+    if options.verbose:
+        print "(+) Calculated global statistics in " + str(time.time() - start_calculation_time) + " seconds"
+        print "(+) Execution completed in " + str(redis_time_data["global_total"]["total_redis_interaction_time"]["measured"][global_start_time]) + " seconds"
+
+    for redis_server in redis_servers_response_codes.iterkeys():
+        if not redis_servers_response_codes[redis_server]:
+            print "+successful_redis_server_connection"
+            print "=successful_redis_server=" + redis_server
